@@ -32,3 +32,27 @@ class HeaderDetectionError(AppError):
 class NoMatchingCodesError(AppError):
     def __init__(self):
         super().__init__("No matching product Codes were found between the two files.")
+
+
+class EmptyWorkbookError(AppError):
+    def __init__(self, file_label):
+        super().__init__(f"The {file_label} has no worksheets with data.")
+
+
+class GenericHeaderDetectionError(AppError):
+    def __init__(self, file_label):
+        super().__init__(
+            f"Could not find a header row in the {file_label}. "
+            "Make sure the sheet has column titles (e.g. Customer, Amount, Due Date)."
+        )
+
+
+class MissingColumnMappingError(AppError):
+    def __init__(self, missing_fields):
+        fields = ", ".join(missing_fields)
+        super().__init__(f"Please map the following required column(s): {fields}.")
+
+
+class NoDataRowsError(AppError):
+    def __init__(self):
+        super().__init__("No usable data rows were found in the uploaded file.")

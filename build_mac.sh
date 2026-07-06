@@ -16,9 +16,9 @@ pip install -r requirements-dev.txt
 echo "Running tests..."
 pytest -q
 
-echo "Building GargDentalExcelComparator.app..."
-pyinstaller --noconfirm GargDentalExcelComparator.spec
+echo "Building GargDentalOperationsToolkit.app..."
+pyinstaller --noconfirm GargDentalOperationsToolkit.spec
 
 echo
 echo "Build complete."
-echo "App bundle: dist/GargDentalExcelComparator/"
+echo "App bundle: dist/GargDentalOperationsToolkit.app"

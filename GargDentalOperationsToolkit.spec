@@ -1,10 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller build spec for the Garg Dental Excel Comparator.
+"""PyInstaller build spec for the Garg Dental Operations Toolkit.
 
-Build with:  pyinstaller --noconfirm GargDentalExcelComparator.spec
-Produces a windowed, onedir app in dist/GargDentalExcelComparator/.
-The icon is optional - drop assets/app_icon.ico (Windows) or
-assets/app_icon.icns (macOS) in place and rebuild to use it.
+Build with:  pyinstaller --noconfirm GargDentalOperationsToolkit.spec
+Produces a windowed, onedir app in dist/GargDentalOperationsToolkit/ (plus a
+double-clickable .app bundle on macOS). The icon is optional - drop
+assets/app_icon.ico (Windows) or assets/app_icon.icns (macOS) in place and
+rebuild to use it.
 """
 import os
 import sys
@@ -40,7 +41,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="GargDentalExcelComparator",
+    name="GargDentalOperationsToolkit",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -57,13 +58,13 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="GargDentalExcelComparator",
+    name="GargDentalOperationsToolkit",
 )
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="GargDentalExcelComparator.app",
+        name="GargDentalOperationsToolkit.app",
         icon=icon_path,
-        bundle_identifier="com.gargdental.excelcomparator",
+        bundle_identifier="com.gargdental.operationstoolkit",
     )

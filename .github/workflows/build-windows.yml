@@ -28,10 +28,10 @@ jobs:
         run: pytest -q
 
       - name: Build Windows executable
-        run: pyinstaller --noconfirm GargDentalExcelComparator.spec
+        run: pyinstaller --noconfirm GargDentalOperationsToolkit.spec
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GargDentalExcelComparator-windows
-          path: dist/GargDentalExcelComparator/
+          name: GargDentalOperationsToolkit-windows
+          path: dist/GargDentalOperationsToolkit/

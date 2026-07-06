@@ -19,11 +19,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Building GargDentalExcelComparator.exe...
-pyinstaller --noconfirm GargDentalExcelComparator.spec
+echo Building GargDentalOperationsToolkit.exe...
+pyinstaller --noconfirm GargDentalOperationsToolkit.spec
 
 echo.
 echo Build complete.
-echo Executable: dist\GargDentalExcelComparator\GargDentalExcelComparator.exe
+echo Executable: dist\GargDentalOperationsToolkit\GargDentalOperationsToolkit.exe
 
 endlocal
