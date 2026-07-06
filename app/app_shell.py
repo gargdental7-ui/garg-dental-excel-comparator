@@ -1,12 +1,15 @@
 """Main window for the Garg Dental Operations Toolkit: a sidebar with three
 tools, each rendered as a swappable page in the same window (one desktop
 application, one executable - not three separate apps)."""
+import logging
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from .pages.collection_page import CollectionPage
 from .pages.comparator_page import ComparatorPage
 from .pages.inventory_page import InventoryPage
+
+logger = logging.getLogger(__name__)
 
 APP_VERSION = "2.0.0"
 
@@ -20,6 +23,18 @@ class OperationsToolkitApp(tk.Tk):
 
         self._configure_style()
         self._build_layout()
+
+    def report_callback_exception(self, exc, val, tb):
+        """Tkinter's default for any exception raised inside a widget
+        callback (button clicks, .after() timers, etc.) is to print the
+        traceback to stderr and otherwise do nothing - invisible in a
+        packaged, console-less app, and it can leave buttons stuck disabled
+        with no feedback at all. Log it and tell the user instead."""
+        logger.error("Unhandled GUI error", exc_info=(exc, val, tb))
+        messagebox.showerror(
+            "Garg Dental Operations Toolkit",
+            "An unexpected error occurred. Details were written to the error log.",
+        )
 
     def _configure_style(self):
         style = ttk.Style(self)

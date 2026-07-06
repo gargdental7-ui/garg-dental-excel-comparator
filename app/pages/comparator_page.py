@@ -113,6 +113,8 @@ class ComparatorPage(ttk.Frame):
     def _on_error(self, message):
         self.progress.stop()
         self.progress.pack_forget()
+        if self.current_sheet and self.oms_sheet:
+            self.compare_button.config(state="normal")
         self._set_status("Ready.")
         messagebox.showerror(APP_TITLE, message)
 

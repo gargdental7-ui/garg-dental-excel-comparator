@@ -43,16 +43,21 @@ class BackgroundTaskRunner:
         threading.Thread(target=runner, daemon=True).start()
 
     def _poll(self):
+        # The reschedule must always happen, even if a result/error handler
+        # raises - otherwise a single bad callback permanently freezes this
+        # page's background updates with no further feedback of any kind.
         try:
-            while True:
-                status, payload = self._queue.get_nowait()
-                if status == "error":
-                    self._on_error(payload)
-                else:
-                    self._on_result(payload)
-        except queue.Empty:
-            pass
-        self._widget.after(self._poll_ms, self._poll)
+            try:
+                while True:
+                    status, payload = self._queue.get_nowait()
+                    if status == "error":
+                        self._on_error(payload)
+                    else:
+                        self._on_result(payload)
+            except queue.Empty:
+                pass
+        finally:
+            self._widget.after(self._poll_ms, self._poll)
 
 
 def show_scrollable_text(parent, title, lines):
