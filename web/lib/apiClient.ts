@@ -3,7 +3,8 @@ import {
   type ApiErrorDetail,
   type CollectionAnalyzeResponse,
   type CollectionInspectResponse,
-  type ComparatorAnalyzeResponse,
+  type ColumnMappingPair,
+  type ComparatorAnalyzeResult,
   type ComparatorInspectResponse,
   type GenerateQuotationRequest,
   type InventoryAnalyzeResponse,
@@ -89,18 +90,18 @@ export const api = {
       form.append("oms_file", omsFile);
       return postForm<ComparatorInspectResponse>(`/api/comparator/inspect`, form);
     },
-    analyze: (currentFile: File, omsFile: File, selectedColumns: string[]) => {
+    analyze: (currentFile: File, omsFile: File, columnMappings: ColumnMappingPair[]) => {
       const form = new FormData();
       form.append("current_file", currentFile);
       form.append("oms_file", omsFile);
-      form.append("selected_columns", JSON.stringify(selectedColumns));
-      return postForm<ComparatorAnalyzeResponse>(`/api/comparator/analyze`, form);
+      form.append("column_mappings", JSON.stringify(columnMappings));
+      return postForm<ComparatorAnalyzeResult>(`/api/comparator/analyze`, form);
     },
-    export: (currentFile: File, omsFile: File, selectedColumns: string[]) => {
+    export: (currentFile: File, omsFile: File, columnMappings: ColumnMappingPair[]) => {
       const form = new FormData();
       form.append("current_file", currentFile);
       form.append("oms_file", omsFile);
-      form.append("selected_columns", JSON.stringify(selectedColumns));
+      form.append("column_mappings", JSON.stringify(columnMappings));
       return postFormForBlob(`/api/comparator/export`, form);
     },
   },

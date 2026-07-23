@@ -32,7 +32,8 @@ export interface CellDifference {
   new_value: unknown;
 }
 
-export interface ComparatorAnalyzeResponse {
+export interface ComparatorAnalyzeLegacyResponse {
+  mode: "legacy";
   stats: {
     total_compared: number;
     total_differences: number;
@@ -45,6 +46,53 @@ export interface ComparatorAnalyzeResponse {
   cell_differences_preview: CellDifference[];
   cell_differences_total_count: number;
 }
+
+// Kept as an alias - existing name, now precisely the legacy (single/same-
+// name column) response shape returned when mode === "legacy".
+export type ComparatorAnalyzeResponse = ComparatorAnalyzeLegacyResponse;
+
+export interface ColumnMappingPair {
+  current_column: string;
+  latest_column: string;
+}
+
+export interface MappedFieldValue {
+  current_column: string;
+  latest_column: string;
+  current_value: unknown;
+  latest_value: unknown;
+  changed: boolean;
+  missing: boolean;
+}
+
+export interface MappedProductRow {
+  code: string;
+  excel_row_index: number;
+  status: "changed" | "unchanged" | "added" | "removed";
+  fields: MappedFieldValue[];
+  changed_field_labels: string[];
+}
+
+export interface ComparatorAnalyzeMappedResponse {
+  mode: "mapped";
+  stats: {
+    total_compared: number;
+    total_changed: number;
+    total_unchanged: number;
+    total_added: number;
+    total_removed: number;
+    duplicate_warnings: string[];
+    mappings: ColumnMappingPair[];
+  };
+  changed_preview: MappedProductRow[];
+  changed_total_count: number;
+  added_preview: MappedProductRow[];
+  added_total_count: number;
+  removed_preview: MappedProductRow[];
+  removed_total_count: number;
+}
+
+export type ComparatorAnalyzeResult = ComparatorAnalyzeLegacyResponse | ComparatorAnalyzeMappedResponse;
 
 // ---------------------------------------------------------------- Collection
 export interface CollectionColumnMapping {
