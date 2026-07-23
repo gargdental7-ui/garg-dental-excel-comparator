@@ -7,9 +7,15 @@ reported individually with its Current File (old) and OMS File (new) value.
 """
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 
-from .exceptions import NoComparableColumnsError, NoMatchingCodesError
+from .exceptions import NoColumnMappingError, NoComparableColumnsError, NoMatchingCodesError
 from .normalizers import values_equal
+
+CHANGED = "changed"
+UNCHANGED = "unchanged"
+ADDED = "added"
+REMOVED = "removed"
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +68,12 @@ def _index_rows_by_code(rows):
     return by_code, duplicates
 
 
-def compare(current, oms):
+def compare(current, oms, selected_columns=None):
     """Compare `current` and `oms` on every column they share except Code.
+
+    If `selected_columns` is given, only those (of the shared columns) are
+    compared - this lets the caller restrict the comparison to a subset of
+    columns instead of every shared column.
 
     Returns a ComparisonResult listing every changed field individually.
     Raises NoComparableColumnsError if the files share no columns besides
@@ -71,6 +81,9 @@ def compare(current, oms):
     """
     shared = find_shared_columns(current.headers, oms.headers)
     compare_columns = [c for c in shared if c.strip().lower() != "code"]
+    if selected_columns is not None:
+        selected_lower = {c.strip().lower() for c in selected_columns}
+        compare_columns = [c for c in compare_columns if c.strip().lower() in selected_lower]
     if not compare_columns:
         raise NoComparableColumnsError()
 
@@ -147,4 +160,169 @@ def compare(current, oms):
         total_compared=total_compared,
         total_differences=len(changed_rows),
         total_field_differences=len(cell_differences),
+    )
+
+
+def _is_blank(value):
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
+@dataclass
+class ColumnMapping:
+    """Pairs a Current File column with the (possibly differently-named)
+    Latest File column it corresponds to - e.g. "Balance" -> "Available
+    Stock". Real OMS exports rarely share column names, so - unlike
+    `compare()`'s `find_shared_columns` - this never requires them to
+    match."""
+
+    current_column: str
+    latest_column: str
+
+
+@dataclass
+class MappedFieldValue:
+    current_column: str
+    latest_column: str
+    current_value: object
+    latest_value: object
+    changed: bool
+    missing: bool
+
+
+@dataclass
+class MappedProductRow:
+    code: str
+    excel_row_index: int
+    status: str  # CHANGED, UNCHANGED, ADDED, or REMOVED
+    fields: list
+    changed_field_labels: list = field(default_factory=list)
+
+
+@dataclass
+class MappedComparisonResult:
+    rows: list  # matched rows only (CHANGED + UNCHANGED), sorted by excel_row_index
+    added: list
+    removed: list
+    mappings: list
+    duplicate_warnings: list = field(default_factory=list)
+    total_compared: int = 0
+    total_changed: int = 0
+    total_unchanged: int = 0
+    total_added: int = 0
+    total_removed: int = 0
+    compared_at: datetime = field(default_factory=datetime.now)
+
+
+def _mapped_field_values(mapping, current_row, current_headers, oms_row, oms_headers):
+    current_val = None
+    if current_row is not None:
+        idx = _resolve_column_index(current_headers, mapping.current_column.strip().lower())
+        current_val = current_row.values[idx] if idx is not None and idx < len(current_row.values) else None
+
+    latest_val = None
+    if oms_row is not None:
+        idx = _resolve_column_index(oms_headers, mapping.latest_column.strip().lower())
+        latest_val = oms_row.values[idx] if idx is not None and idx < len(oms_row.values) else None
+
+    changed = current_row is not None and oms_row is not None and not values_equal(current_val, latest_val)
+    missing = _is_blank(current_val) or _is_blank(latest_val)
+
+    return MappedFieldValue(
+        current_column=mapping.current_column,
+        latest_column=mapping.latest_column,
+        current_value=current_val,
+        latest_value=latest_val,
+        changed=changed,
+        missing=missing,
+    )
+
+
+def compare_mapped(current, oms, mappings):
+    """Like `compare()`, but matches each mapping's own (possibly
+    differently-named) column on each side instead of requiring identical
+    names, and classifies every product as changed/unchanged/added/removed
+    rather than only reporting changed cells.
+
+    Raises NoColumnMappingError if `mappings` is empty, NoMatchingCodesError
+    if the two files share no product Codes at all (same duplicate-Code
+    handling/warnings as `compare()`).
+    """
+    if not mappings:
+        raise NoColumnMappingError()
+
+    current_by_code, current_dupes = _index_rows_by_code(current.rows)
+    oms_by_code, oms_dupes = _index_rows_by_code(oms.rows)
+    excluded = current_dupes | oms_dupes
+
+    warnings = []
+    for code in sorted(current_dupes):
+        warnings.append(f'Duplicate Code "{code}" found in the Current File. These rows were skipped.')
+    for code in sorted(oms_dupes):
+        warnings.append(f'Duplicate Code "{code}" found in the OMS File. These rows were skipped.')
+
+    matched_rows = []
+    added = []
+    removed = []
+    total_compared = 0
+    total_changed = 0
+    total_unchanged = 0
+
+    for code, oms_row in oms_by_code.items():
+        if code in excluded:
+            continue
+        current_row = current_by_code.get(code)
+        if current_row is None:
+            fields = [_mapped_field_values(m, None, current.headers, oms_row, oms.headers) for m in mappings]
+            added.append(
+                MappedProductRow(code=code, excel_row_index=oms_row.excel_row_index, status=ADDED, fields=fields)
+            )
+            continue
+
+        total_compared += 1
+        fields = [_mapped_field_values(m, current_row, current.headers, oms_row, oms.headers) for m in mappings]
+        changed_labels = [f.current_column for f in fields if f.changed]
+        status = CHANGED if changed_labels else UNCHANGED
+        if status == CHANGED:
+            total_changed += 1
+        else:
+            total_unchanged += 1
+        matched_rows.append(
+            MappedProductRow(
+                code=code,
+                excel_row_index=oms_row.excel_row_index,
+                status=status,
+                fields=fields,
+                changed_field_labels=changed_labels,
+            )
+        )
+
+    for code, current_row in current_by_code.items():
+        if code in excluded or code in oms_by_code:
+            continue
+        fields = [_mapped_field_values(m, current_row, current.headers, None, oms.headers) for m in mappings]
+        removed.append(
+            MappedProductRow(code=code, excel_row_index=current_row.excel_row_index, status=REMOVED, fields=fields)
+        )
+
+    if total_compared == 0 and not added and not removed and not warnings:
+        raise NoMatchingCodesError()
+
+    matched_rows.sort(key=lambda r: r.excel_row_index)
+    added.sort(key=lambda r: r.excel_row_index)
+    removed.sort(key=lambda r: r.excel_row_index)
+
+    if warnings:
+        logger.warning("Duplicate codes detected: %s", "; ".join(warnings))
+
+    return MappedComparisonResult(
+        rows=matched_rows,
+        added=added,
+        removed=removed,
+        mappings=mappings,
+        duplicate_warnings=warnings,
+        total_compared=total_compared,
+        total_changed=total_changed,
+        total_unchanged=total_unchanged,
+        total_added=len(added),
+        total_removed=len(removed),
     )

@@ -77,3 +77,14 @@ class InvalidQuotationItemError(AppError):
 class UnknownCompanyError(AppError):
     def __init__(self, company_id):
         super().__init__(f"'{company_id}' is not a recognized company profile.")
+
+
+class NoColumnMappingError(AppError):
+    def __init__(self):
+        super().__init__("Please map at least one column between the two files before comparing.")
+
+
+class DuplicateQuotationItemError(AppError):
+    def __init__(self, duplicate_names):
+        joined = ", ".join(duplicate_names)
+        super().__init__(f"The following product(s) were added more than once: {joined}.")
