@@ -1,3 +1,8 @@
 -r requirements.txt
 pytest>=8.0.0
 pyinstaller>=6.6.0
+
+# Only needed to test/build the web app's Smart Quotation Generator
+# (server/requirements.txt is the real production dependency for that -
+# the Tkinter desktop app and its PyInstaller build never import this).
+docxtpl==0.20.2
