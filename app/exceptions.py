@@ -56,3 +56,24 @@ class MissingColumnMappingError(AppError):
 class NoDataRowsError(AppError):
     def __init__(self):
         super().__init__("No usable data rows were found in the uploaded file.")
+
+
+class MissingCustomerNameError(AppError):
+    def __init__(self):
+        super().__init__("Please enter a Customer Name before generating the quotation.")
+
+
+class NoQuotationProductsError(AppError):
+    def __init__(self):
+        super().__init__("Please add at least one product before generating the quotation.")
+
+
+class InvalidQuotationItemError(AppError):
+    def __init__(self, problems):
+        joined = "; ".join(problems)
+        super().__init__(f"Please fix the following product(s): {joined}.")
+
+
+class UnknownCompanyError(AppError):
+    def __init__(self, company_id):
+        super().__init__(f"'{company_id}' is not a recognized company profile.")
