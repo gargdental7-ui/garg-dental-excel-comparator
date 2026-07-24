@@ -36,6 +36,10 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/login") return true;
   if (pathname === "/favicon.ico") return true;
   if (pathname.startsWith("/_next/")) return true;
+  // Static brand assets (logo etc.) - non-sensitive, and next/image's
+  // optimizer fetches these from this same origin without the session
+  // cookie, so gating them 401s the fetch and breaks every <Image>.
+  if (pathname.startsWith("/brand/")) return true;
   return false;
 }
 
