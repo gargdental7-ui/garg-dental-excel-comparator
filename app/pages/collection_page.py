@@ -7,7 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .. import collection_writer, generic_excel
 from ..collection_analyzer import CollectionColumnMapping, CollectionThresholds, analyze_collections
-from .common import FILETYPES, BackgroundTaskRunner, ColumnMappingRow
+from .common import FILETYPES, BackgroundTaskRunner, ColumnMappingRow, ScrollableFrame
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,9 @@ class CollectionPage(ttk.Frame):
             font=("Helvetica", 11),
         ).pack(anchor="w", pady=(0, 18))
 
-        self.setup_frame = ttk.Frame(self)
-        self.setup_frame.pack(fill="both", expand=True)
+        self.setup_container = ScrollableFrame(self)
+        self.setup_container.pack(fill="both", expand=True)
+        self.setup_frame = self.setup_container.body
 
         file_box = ttk.LabelFrame(self.setup_frame, text="Outstanding / Receivables File", padding=12)
         file_box.pack(fill="x", pady=6)
@@ -263,7 +264,7 @@ class CollectionPage(ttk.Frame):
 
     def _show_results(self, result):
         self.analyze_button.config(state="normal")
-        self.setup_frame.pack_forget()
+        self.setup_container.pack_forget()
         stats = (
             f"Total Outstanding: {result.total_outstanding:,.2f}\n"
             f"Total Customers With Outstanding: {result.total_customers:,}\n"
@@ -310,5 +311,5 @@ class CollectionPage(ttk.Frame):
         self.threshold_box.pack_forget()
         self.analyze_button.config(state="disabled")
         self.results_frame.pack_forget()
-        self.setup_frame.pack(fill="both", expand=True)
+        self.setup_container.pack(fill="both", expand=True)
         self._set_status("Select an outstanding/receivables Excel file to begin.")

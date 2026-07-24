@@ -101,6 +101,93 @@ def show_scrollable_text(parent, title, lines):
     root.wait_window(dialog)
 
 
+class ScrollableFrame(ttk.Frame):
+    """A vertically scrollable container. The Collection and Inventory
+    pages have a variable number of column-mapping rows plus a rules box,
+    which can add up to more vertical space than the window - without this,
+    the Analyze button (and everything after it) is simply pushed off
+    screen with no way to reach it. Pack content into `.body`, not `self`."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        canvas = tk.Canvas(self, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.body = ttk.Frame(canvas)
+
+        self.body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        body_window = canvas.create_window((0, 0), window=self.body, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(body_window, width=e.width))
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def _on_mousewheel(event):
+            if event.num == 4:
+                canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                canvas.yview_scroll(1, "units")
+            elif abs(event.delta) >= 120:
+                canvas.yview_scroll(int(-event.delta / 120), "units")
+            else:
+                canvas.yview_scroll(int(-event.delta), "units")
+
+        def _bind_scroll(_event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            canvas.bind_all("<Button-4>", _on_mousewheel)
+            canvas.bind_all("<Button-5>", _on_mousewheel)
+
+        def _unbind_scroll(_event):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        canvas.bind("<Enter>", _bind_scroll)
+        canvas.bind("<Leave>", _unbind_scroll)
+
+
+class ColumnChecklist(ttk.Frame):
+    """A 'Select All / Select None' checkbox list of column names, used by the
+    Comparator page to let the user restrict comparison to a subset of the
+    columns shared by both files instead of comparing every shared column."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self._vars = {}
+
+        controls = ttk.Frame(self)
+        controls.pack(fill="x", anchor="w")
+        ttk.Button(controls, text="Select All", command=self._select_all).pack(side="left")
+        ttk.Button(controls, text="Select None", command=self._select_none).pack(side="left", padx=(6, 0))
+
+        self._list_frame = ttk.Frame(self)
+        self._list_frame.pack(fill="x", pady=(6, 0))
+
+    def set_columns(self, columns):
+        """Rebuild the checklist for `columns`, all checked by default.
+        A column that was already present keeps its previous checked state,
+        so reselecting a file doesn't silently drop the user's choices."""
+        previous = {name: var.get() for name, var in self._vars.items()}
+        for child in self._list_frame.winfo_children():
+            child.destroy()
+        self._vars = {}
+        for name in columns:
+            var = tk.BooleanVar(value=previous.get(name, True))
+            ttk.Checkbutton(self._list_frame, text=name, variable=var).pack(anchor="w")
+            self._vars[name] = var
+
+    def get_selected(self):
+        return [name for name, var in self._vars.items() if var.get()]
+
+    def _select_all(self):
+        for var in self._vars.values():
+            var.set(True)
+
+    def _select_none(self):
+        for var in self._vars.values():
+            var.set(False)
+
+
 class ColumnMappingRow:
     """One 'Field Name: [dropdown of detected headers]' row, used by both the
     Collection and Inventory pages to map uploaded columns to logical

@@ -7,7 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .. import generic_excel, inventory_writer
 from ..inventory_analyzer import InventoryColumnMapping, MovementThresholds, analyze_inventory
-from .common import FILETYPES, BackgroundTaskRunner, ColumnMappingRow
+from .common import FILETYPES, BackgroundTaskRunner, ColumnMappingRow, ScrollableFrame
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,9 @@ class InventoryPage(ttk.Frame):
             font=("Helvetica", 11),
         ).pack(anchor="w", pady=(0, 18))
 
-        self.setup_frame = ttk.Frame(self)
-        self.setup_frame.pack(fill="both", expand=True)
+        self.setup_container = ScrollableFrame(self)
+        self.setup_container.pack(fill="both", expand=True)
+        self.setup_frame = self.setup_container.body
 
         file_box = ttk.LabelFrame(self.setup_frame, text="Inventory / Stock Movement File", padding=12)
         file_box.pack(fill="x", pady=6)
@@ -278,7 +279,7 @@ class InventoryPage(ttk.Frame):
 
     def _show_results(self, result):
         self.analyze_button.config(state="normal")
-        self.setup_frame.pack_forget()
+        self.setup_container.pack_forget()
         counts = result.counts
         stats = (
             f"Total Products Analyzed: {len(result.products):,}\n"
@@ -335,5 +336,5 @@ class InventoryPage(ttk.Frame):
         self.threshold_box.pack_forget()
         self.analyze_button.config(state="disabled")
         self.results_frame.pack_forget()
-        self.setup_frame.pack(fill="both", expand=True)
+        self.setup_container.pack(fill="both", expand=True)
         self._set_status("Select an inventory/stock movement Excel file to begin.")

@@ -18,11 +18,13 @@ memory, analyzed, and the original file is never modified.
 ## Excel Comparator
 
 1. Select the Current File and the Latest OMS File (`.xlsx` / `.xlsm`).
-2. Click **Compare Files**. Rows are matched by `Code`; every column shared
-   by both files (besides `Code` itself) is compared automatically -
-   nothing to select.
-3. Any column that differs for a matched Code is reported individually,
-   with its Current File (old) and OMS File (new) value.
+2. Rows are matched by `Code`. Every column shared by both files (besides
+   `Code` itself) is detected automatically and listed under **Columns To
+   Compare**, all checked by default - uncheck any you want to ignore, or
+   use **Select All / Select None**.
+3. Click **Compare Files**. Any checked column that differs for a matched
+   Code is reported individually, with its Current File (old) and OMS File
+   (new) value.
 4. Save the result as a new Excel file.
 
 The result workbook has up to four sheets:
@@ -122,9 +124,11 @@ python3 main.py
 Manual end-to-end check on Mac:
 
 1. **Excel Comparator**: select a Current File and an OMS File, confirm
-   Compare Files enables once both load, compare, save, and confirm
-   `FIELD_CHANGES` lists exact old/new values and `DIFFERENCES` preserves
-   complete OMS rows.
+   Compare Files enables once both load, confirm the Columns To Compare
+   checklist lists the shared columns, uncheck one and confirm it's
+   excluded from the result, compare, save, and confirm `FIELD_CHANGES`
+   lists exact old/new values and `DIFFERENCES` preserves complete OMS
+   rows.
 2. **Collection Analyzer**: upload an outstanding report, confirm columns
    auto-map where names are recognizable, run Analyze, export, and confirm
    `COLLECTION_PRIORITY` is sorted highest-priority first and

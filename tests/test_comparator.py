@@ -102,6 +102,22 @@ def test_all_shared_columns_except_code_are_compared(tmp_path):
     assert result.total_field_differences == 4  # Opening, Received, Delivered, Balance changed
 
 
+def test_selected_columns_restricts_comparison(tmp_path):
+    current = _load(tmp_path, "current.xlsx", [["A1", "Desc", "EA", 1, 1, 1, 1]])
+    oms = _load(tmp_path, "oms.xlsx", [["A1", "NEW DESC", "EA", 9, 9, 9, 9]])
+    result = comparator.compare(current, oms, selected_columns=["Balance"])
+    assert result.compared_columns == ["Balance"]
+    assert result.total_field_differences == 1
+    assert result.cell_differences[0].column == "Balance"
+
+
+def test_selected_columns_empty_after_filtering_raises(tmp_path):
+    current = _load(tmp_path, "current.xlsx", [["A1", "Desc", "EA", 1, 1, 1, 1]])
+    oms = _load(tmp_path, "oms.xlsx", [["A1", "Desc", "EA", 1, 1, 1, 1]])
+    with pytest.raises(NoComparableColumnsError):
+        comparator.compare(current, oms, selected_columns=["Nonexistent Column"])
+
+
 def test_no_comparable_columns_raises(tmp_path):
     current_path = tmp_path / "current.xlsx"
     oms_path = tmp_path / "oms.xlsx"

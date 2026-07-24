@@ -6,7 +6,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .. import comparator, workbook_reader, workbook_writer
-from .common import FILETYPES, BackgroundTaskRunner, show_scrollable_text
+from .common import FILETYPES, BackgroundTaskRunner, ColumnChecklist, ScrollableFrame, show_scrollable_text
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,9 @@ class ComparatorPage(ttk.Frame):
             font=("Helvetica", 11),
         ).pack(anchor="w", pady=(0, 18))
 
-        self.setup_frame = ttk.Frame(self)
-        self.setup_frame.pack(fill="both", expand=True)
+        self.setup_container = ScrollableFrame(self)
+        self.setup_container.pack(fill="both", expand=True)
+        self.setup_frame = self.setup_container.body
 
         current_box = ttk.LabelFrame(self.setup_frame, text="Current File", padding=12)
         current_box.pack(fill="x", pady=6)
@@ -48,6 +49,10 @@ class ComparatorPage(ttk.Frame):
         ttk.Button(oms_box, text="Select OMS File", command=self._select_oms).pack(anchor="w")
         self.oms_label = ttk.Label(oms_box, text="No file selected", foreground="#666666")
         self.oms_label.pack(anchor="w", pady=(6, 0))
+
+        self.columns_box = ttk.LabelFrame(self.setup_frame, text="Columns To Compare", padding=12)
+        self.columns_checklist = ColumnChecklist(self.columns_box)
+        self.columns_checklist.pack(fill="x")
 
         self.compare_button = ttk.Button(
             self.setup_frame, text="COMPARE FILES", command=self._start_compare, state="disabled"
@@ -135,18 +140,36 @@ class ComparatorPage(ttk.Frame):
             return
 
         if self.current_sheet and self.oms_sheet:
+            self._refresh_column_selector()
             self.compare_button.config(state="normal")
             self._set_status("Both files loaded. Click Compare Files.")
+
+    # ----------------------------------------------------- column selector --
+    def _refresh_column_selector(self):
+        shared = comparator.find_shared_columns(self.current_sheet.headers, self.oms_sheet.headers)
+        columns = [c for c in shared if c.strip().lower() != "code"]
+        self.columns_checklist.set_columns(columns)
+        if columns:
+            self.columns_box.pack(fill="x", pady=6, before=self.compare_button)
+        else:
+            self.columns_box.pack_forget()
 
     # --------------------------------------------------------- comparison --
     def _start_compare(self):
         if not self.current_sheet or not self.oms_sheet:
             messagebox.showerror(APP_TITLE, "Please select both Excel files.")
             return
+        selected_columns = self.columns_checklist.get_selected()
+        if not selected_columns:
+            messagebox.showerror(APP_TITLE, "Please select at least one column to compare.")
+            return
         self._set_status("Comparing files...")
         self.compare_button.config(state="disabled")
         self._start_background(
-            lambda: ("compare_done", comparator.compare(self.current_sheet, self.oms_sheet))
+            lambda: (
+                "compare_done",
+                comparator.compare(self.current_sheet, self.oms_sheet, selected_columns=selected_columns),
+            )
         )
 
     def _show_results(self, result):
@@ -154,7 +177,7 @@ class ComparatorPage(ttk.Frame):
         if result.duplicate_warnings:
             show_scrollable_text(self, "Duplicate Codes Found", result.duplicate_warnings)
 
-        self.setup_frame.pack_forget()
+        self.setup_container.pack_forget()
         stats = (
             f"Products Compared: {result.total_compared:,}\n"
             f"Rows With Differences: {result.total_differences:,}\n"
@@ -203,7 +226,9 @@ class ComparatorPage(ttk.Frame):
         self.comparison_result = None
         self.current_label.config(text="No file selected")
         self.oms_label.config(text="No file selected")
+        self.columns_checklist.set_columns([])
+        self.columns_box.pack_forget()
         self.compare_button.config(state="disabled")
         self.results_frame.pack_forget()
-        self.setup_frame.pack(fill="both", expand=True)
+        self.setup_container.pack(fill="both", expand=True)
         self._set_status("Select both Excel files to begin.")
