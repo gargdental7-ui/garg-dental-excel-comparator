@@ -90,6 +90,7 @@ class QuotationItemIn(BaseModel):
     origin: str = ""
     category: str = ""
     warranty: str = ""
+    mrp: float = 0
     discount_percent: float = 0
     discount_amount: float = 0
     image: Optional[str] = None

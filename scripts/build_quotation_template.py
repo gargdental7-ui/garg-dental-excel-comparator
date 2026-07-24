@@ -193,6 +193,7 @@ def edit_product_table(doc):
     # expressions (no {%p %}/{%tr %} tag) are safe to combine in one
     # paragraph, so the conditional single-line fields stay as one-liners;
     # only the list fields need the three-paragraph loop structure.
+    append_line("{{ ('MRP: ' + item.mrp_formatted) if item.mrp_formatted else '' }}")
     append_line("{{ ('Warranty: ' + item.warranty) if item.warranty else '' }}")
     append_line("{{ 'Technical Specifications :' if item.specifications else '' }}")
     append_loop("item.specifications", "s", "specifications")

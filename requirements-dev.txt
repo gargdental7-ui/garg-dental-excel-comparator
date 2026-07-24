@@ -6,3 +6,4 @@ pyinstaller>=6.6.0
 # (server/requirements.txt is the real production dependency for that -
 # the Tkinter desktop app and its PyInstaller build never import this).
 docxtpl==0.20.2
+Pillow==12.3.0

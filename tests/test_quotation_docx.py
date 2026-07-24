@@ -3,6 +3,8 @@ import io
 
 import docx
 import pytest
+from docx.oxml.ns import qn
+from PIL import Image
 
 from app import quotation, quotation_docx
 from app.quotation import QuotationCustomer, QuotationItem, QuotationProposal
@@ -10,6 +12,16 @@ from app.quotation_companies import get_company
 
 # Minimal 1x1 red PNG, used to verify image embedding doesn't crash the render.
 _PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+
+def _webp_data_url(size=(120, 80), color=(30, 80, 160)):
+    buf = io.BytesIO()
+    Image.new("RGB", size, color=color).save(buf, format="WEBP")
+    return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _count_drawings(cell):
+    return sum(len(p._element.findall(".//" + qn("w:drawing"))) for p in cell.paragraphs)
 
 
 def _customer(**overrides):
@@ -117,3 +129,55 @@ def test_unknown_company_raises():
 
     with pytest.raises(UnknownCompanyError):
         get_company("acme_dental")
+
+
+def test_mrp_line_present_when_set():
+    items = [QuotationItem(product_name="RVG Sensor", price=108000, quantity=1, mrp=130000)]
+    doc, _ = _render_and_reopen(items)
+    description_cell = doc.tables[0].rows[1].cells[1].text
+    assert "MRP: 130,000.00" in description_cell
+
+
+def test_mrp_line_absent_when_unset():
+    items = [QuotationItem(product_name="RVG Sensor", price=108000, quantity=1)]
+    doc, _ = _render_and_reopen(items)
+    description_cell = doc.tables[0].rows[1].cells[1].text
+    assert "MRP:" not in description_cell
+
+
+def test_webp_image_is_converted_and_embedded():
+    items = [QuotationItem(product_name="RVG Sensor", price=108000, quantity=1, image=_webp_data_url())]
+    doc, _ = _render_and_reopen(items)
+    cell = doc.tables[0].rows[1].cells[1]
+    assert _count_drawings(cell) == 1
+
+    # Every embedded media part must be a real PNG (magic bytes), regardless
+    # of the source format the browser sent - this is what makes the image
+    # reliably open in any Word version.
+    for part in doc.part.package.iter_parts():
+        partname = str(part.partname)
+        if "media/image" in partname and not partname.lower().endswith(".jpeg"):
+            assert part.blob[:8] == b"\x89PNG\r\n\x1a\n", f"{partname} is not a real PNG"
+
+
+def test_multi_item_render_with_mixed_image_formats_and_mrp():
+    items = [
+        QuotationItem(product_name="RVG Sensor", price=108000, quantity=1, mrp=130000, image=_webp_data_url()),
+        QuotationItem(product_name="Portable X-Ray", price=175000, quantity=1),
+        QuotationItem(product_name="Autoclave", price=50000, quantity=2, discount_percent=10, mrp=60000),
+    ]
+    doc, totals = _render_and_reopen(items)
+    table = doc.tables[0]
+    assert len(table.rows) == 8
+    assert "MRP: 130,000.00" in table.rows[1].cells[1].text
+    assert "MRP:" not in table.rows[2].cells[1].text
+    assert "MRP: 60,000.00" in table.rows[3].cells[1].text
+    assert _count_drawings(table.rows[1].cells[1]) == 1
+    assert _count_drawings(table.rows[2].cells[1]) == 0
+
+
+def test_corrupt_image_omitted_without_crashing():
+    items = [QuotationItem(product_name="RVG Sensor", price=108000, quantity=1, image="data:image/png;base64,bm90IGFuIGltYWdl")]
+    doc, _ = _render_and_reopen(items)
+    cell = doc.tables[0].rows[1].cells[1]
+    assert _count_drawings(cell) == 0

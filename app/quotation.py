@@ -7,7 +7,12 @@ totals/validation/rendering path as an Excel-imported one.
 """
 from dataclasses import dataclass, field
 
-from .exceptions import InvalidQuotationItemError, MissingCustomerNameError, NoQuotationProductsError
+from .exceptions import (
+    DuplicateQuotationItemError,
+    InvalidQuotationItemError,
+    MissingCustomerNameError,
+    NoQuotationProductsError,
+)
 
 
 @dataclass
@@ -26,6 +31,8 @@ class ProductColumnMapping:
     origin: str = None
     category: str = None
     warranty: str = None
+    mrp: str = None
+    image_path: str = None
 
 
 @dataclass
@@ -63,6 +70,7 @@ class QuotationItem:
     origin: str = ""
     category: str = ""
     warranty: str = ""
+    mrp: float = 0
     discount_percent: float = 0
     discount_amount: float = 0
     image: str = None  # base64 data URL, or None
@@ -139,6 +147,12 @@ def map_product_rows(headers, rows, mapping):
                 "origin": _clean_text(row.get(mapping.origin)) if mapping.origin else "",
                 "category": _clean_text(row.get(mapping.category)) if mapping.category else "",
                 "warranty": _clean_text(row.get(mapping.warranty)) if mapping.warranty else "",
+                "mrp": _parse_price(row.get(mapping.mrp)) if mapping.mrp else 0.0,
+                # Metadata only, never resolved server-side (an uploaded
+                # Excel's image path is relative to the *client's*
+                # filesystem, not this server) - the browser offers to load
+                # it only when it looks like an http(s) URL.
+                "image_path": _clean_text(row.get(mapping.image_path)) if mapping.image_path else "",
             }
         )
     return products
@@ -164,16 +178,39 @@ def compute_totals(items, vat_rate: float = 0) -> QuotationTotals:
     return QuotationTotals(subtotal=subtotal, discount=discount, vat=vat, grand_total=taxable + vat)
 
 
+def find_duplicate_products(items):
+    """Returns the display names of products added more than once
+    (case-insensitive match on product_name + code - a bare name repeat
+    with a different code is treated as a distinct product, e.g. two
+    different pack sizes sharing a generic name)."""
+    seen = {}
+    duplicates = []
+    for item in items:
+        key = (_clean_text(item.product_name).lower(), _clean_text(item.code).lower())
+        if key[0] == "":
+            continue
+        if key in seen:
+            if seen[key] not in duplicates:
+                duplicates.append(seen[key])
+        else:
+            seen[key] = item.product_name
+    return duplicates
+
+
 def validate_quotation(customer: QuotationCustomer, items):
-    """Raises MissingCustomerNameError, NoQuotationProductsError, or
-    InvalidQuotationItemError (bundling every problem found) - mirrors
-    collection_analyzer/inventory_analyzer's fail-fast-with-one-clear-
-    message style."""
+    """Raises MissingCustomerNameError, NoQuotationProductsError,
+    DuplicateQuotationItemError, or InvalidQuotationItemError (bundling
+    every problem found) - mirrors collection_analyzer/inventory_analyzer's
+    fail-fast-with-one-clear-message style."""
     if not _clean_text(customer.customer_name):
         raise MissingCustomerNameError()
 
     if not items:
         raise NoQuotationProductsError()
+
+    duplicates = find_duplicate_products(items)
+    if duplicates:
+        raise DuplicateQuotationItemError(duplicates)
 
     problems = []
     for index, item in enumerate(items, start=1):

@@ -9,14 +9,18 @@ outside of the fields that are actually meant to change.
 import base64
 import binascii
 import io
+import logging
 import re
 from datetime import datetime
 
 from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage
+from PIL import Image, UnidentifiedImageError
 
 from .quotation import ItemTotal, compute_item_total
 from .quotation_companies import CompanyProfile
+
+logger = logging.getLogger("gargdental.quotation_docx")
 
 # Roughly matches the reference document's own embedded product image width
 # (~65mm) so a real photo doesn't dominate or shrink oddly inside the cell.
@@ -41,11 +45,33 @@ def _decode_image(data_url):
         return None
 
 
+def _normalize_image_to_png(raw_bytes):
+    """Word's native image support for WEBP is inconsistent across
+    versions (older Word can show a broken-image icon), while PNG is
+    universally safe - so every uploaded image, regardless of source
+    format (PNG/JPEG/WEBP/...), gets normalized to PNG before embedding.
+    Returns None (rather than raising) for anything Pillow can't decode,
+    so a corrupt/unsupported image degrades to "no image" instead of
+    failing the whole generation."""
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as img:
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
+            output = io.BytesIO()
+            img.save(output, format="PNG")
+            return output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError):
+        logger.warning("Could not decode product image - omitting it from the document.")
+        return None
+
+
 def _build_item_context(tpl, item):
     image = None
     raw_image = _decode_image(item.image)
     if raw_image:
-        image = InlineImage(tpl, io.BytesIO(raw_image), width=PRODUCT_IMAGE_WIDTH)
+        png_bytes = _normalize_image_to_png(raw_image)
+        if png_bytes:
+            image = InlineImage(tpl, io.BytesIO(png_bytes), width=PRODUCT_IMAGE_WIDTH)
 
     item_total: ItemTotal = compute_item_total(item)
     return {
@@ -56,6 +82,7 @@ def _build_item_context(tpl, item):
         "image": image,
         "features": [f for f in item.features if f],
         "warranty": item.warranty,
+        "mrp_formatted": _fmt_currency(item.mrp) if item.mrp else "",
         "specifications": [s for s in item.specifications if s],
         "accessories": [a for a in item.accessories if a],
         "installation_notes": item.installation_notes,

@@ -38,6 +38,8 @@ PRODUCT_CANDIDATES = {
     "origin": ["origin", "country of origin", "made in"],
     "category": ["category", "type"],
     "warranty": ["warranty", "warranty period"],
+    "mrp": ["mrp", "m.r.p", "m.r.p.", "maximum retail price"],
+    "image_path": ["image path", "image", "photo", "picture", "image url"],
 }
 
 

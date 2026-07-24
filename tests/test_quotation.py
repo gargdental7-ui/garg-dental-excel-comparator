@@ -1,7 +1,12 @@
 import pytest
 
 from app import quotation
-from app.exceptions import InvalidQuotationItemError, MissingCustomerNameError, NoQuotationProductsError
+from app.exceptions import (
+    DuplicateQuotationItemError,
+    InvalidQuotationItemError,
+    MissingCustomerNameError,
+    NoQuotationProductsError,
+)
 from app.quotation import ProductColumnMapping, QuotationCustomer, QuotationItem
 
 HEADERS = ["Item", "Cost", "Code No", "Make", "Model No"]
@@ -31,8 +36,19 @@ def test_map_product_rows_uses_arbitrary_headers():
             "origin": "",
             "category": "",
             "warranty": "",
+            "mrp": 0.0,
+            "image_path": "",
         }
     ]
+
+
+def test_map_product_rows_passes_through_mrp_and_image_path():
+    headers = ["Item", "Cost", "MRP", "Image"]
+    rows = [{"Item": "RVG Sensor", "Cost": 100, "MRP": "150.00", "Image": "https://example.com/rvg.png"}]
+    mapping = ProductColumnMapping(product_name="Item", price="Cost", mrp="MRP", image_path="Image")
+    products = quotation.map_product_rows(headers, rows, mapping)
+    assert products[0]["mrp"] == 150.0
+    assert products[0]["image_path"] == "https://example.com/rvg.png"
 
 
 def test_map_product_rows_skips_blank_names():
@@ -119,3 +135,37 @@ def test_validate_rejects_invalid_discount():
 def test_validate_passes_for_well_formed_quotation():
     items = [QuotationItem(product_name="A", price=100, quantity=2, discount_percent=10)]
     quotation.validate_quotation(QuotationCustomer(customer_name="Acme"), items)
+
+
+def test_find_duplicate_products_detects_exact_match():
+    items = [
+        QuotationItem(product_name="RVG Sensor", price=100, code="RVG-01"),
+        QuotationItem(product_name="RVG Sensor", price=100, code="RVG-01"),
+    ]
+    assert quotation.find_duplicate_products(items) == ["RVG Sensor"]
+
+
+def test_find_duplicate_products_is_case_insensitive():
+    items = [
+        QuotationItem(product_name="RVG Sensor", price=100, code="RVG-01"),
+        QuotationItem(product_name="rvg sensor", price=200, code="rvg-01"),
+    ]
+    assert quotation.find_duplicate_products(items) == ["RVG Sensor"]
+
+
+def test_find_duplicate_products_no_false_positive_for_different_codes():
+    items = [
+        QuotationItem(product_name="RVG Sensor", price=100, code="SMALL"),
+        QuotationItem(product_name="RVG Sensor", price=150, code="LARGE"),
+    ]
+    assert quotation.find_duplicate_products(items) == []
+
+
+def test_validate_rejects_duplicate_products():
+    items = [
+        QuotationItem(product_name="RVG Sensor", price=100, code="RVG-01"),
+        QuotationItem(product_name="RVG Sensor", price=100, code="RVG-01"),
+    ]
+    with pytest.raises(DuplicateQuotationItemError) as exc_info:
+        quotation.validate_quotation(QuotationCustomer(customer_name="Acme"), items)
+    assert "RVG Sensor" in str(exc_info.value)
