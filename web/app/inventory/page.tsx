@@ -14,6 +14,7 @@ import { ThresholdField } from "@/components/ThresholdField";
 import { StatsPanel } from "@/components/StatsPanel";
 import { PreviewTable } from "@/components/PreviewTable";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { Button } from "@/components/Button";
 
 const EMPTY_MAPPING: InventoryColumnMapping = {
   code: null,
@@ -257,14 +258,9 @@ export default function InventoryPage() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                disabled={busy || !requiredMapped}
-                onClick={handleAnalyze}
-                className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
-              >
+              <Button disabled={busy || !requiredMapped} onClick={handleAnalyze}>
                 {busy ? "Working..." : "Analyze"}
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -318,21 +314,12 @@ export default function InventoryPage() {
           )}
 
           <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={handleExport}
-              disabled={exporting}
-              className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
-            >
+            <Button onClick={handleExport} disabled={exporting}>
               {exporting ? "Preparing..." : "Export Inventory Analysis"}
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200"
-            >
+            </Button>
+            <Button variant="secondary" onClick={reset}>
               New Analysis
-            </button>
+            </Button>
           </div>
         </div>
       )}

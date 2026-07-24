@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Button } from "@/components/Button";
 
 function LoginForm() {
   const router = useRouter();
@@ -60,13 +61,9 @@ function LoginForm() {
 
         {error && <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={submitting || !password}
-          className="w-full rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
-        >
+        <Button type="submit" disabled={submitting || !password} className="w-full">
           {submitting ? "Signing in..." : "Sign In"}
-        </button>
+        </Button>
       </form>
     </div>
   );

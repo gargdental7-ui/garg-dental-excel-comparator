@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { QuotationItem } from "@/lib/types";
+import { Button } from "@/components/Button";
 
 const INPUT_CLASS =
   "w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100";
@@ -296,20 +297,12 @@ export function ProductForm({
       </div>
 
       <div className="mt-4 flex gap-3">
-        <button
-          type="submit"
-          disabled={!item.product_name.trim() || item.price <= 0}
-          className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
-        >
+        <Button type="submit" disabled={!item.product_name.trim() || item.price <= 0}>
           {isEditing ? "Save Changes" : "Add Product"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200"
-        >
+        </Button>
+        <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );

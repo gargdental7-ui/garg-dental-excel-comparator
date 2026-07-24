@@ -18,6 +18,7 @@ import { QuoteSummary } from "@/components/quotation/QuoteSummary";
 import { QuotationHelp } from "@/components/quotation/QuotationHelp";
 import { QuotationPreview } from "@/components/quotation/QuotationPreview";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { Button } from "@/components/Button";
 
 const COMPANY_ID = "garg_dental";
 
@@ -174,24 +175,14 @@ export default function GargDentalNewQuotePage() {
           {mode === "excel" && excelProducts && (
             <>
               <ProductBrowser products={excelProducts} fileName={excelFileName} onSelect={openFormFromProduct} />
-              <button
-                type="button"
-                onClick={openManualForm}
-                className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200"
-              >
+              <Button variant="secondary" onClick={openManualForm}>
                 New Manual Product
-              </button>
+              </Button>
             </>
           )}
 
           {mode === "manual" && (
-            <button
-              type="button"
-              onClick={openManualForm}
-              className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900"
-            >
-              New Manual Product
-            </button>
+            <Button onClick={openManualForm}>New Manual Product</Button>
           )}
 
           {formSeed && (
@@ -231,21 +222,12 @@ export default function GargDentalNewQuotePage() {
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
               <p className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Review &amp; Generate</p>
               <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={handleGenerate}
-                  disabled={busy || duplicateProducts.length > 0}
-                  className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
-                >
+                <Button onClick={handleGenerate} disabled={busy || duplicateProducts.length > 0}>
                   {busy ? "Generating..." : "Generate DOCX"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrint}
-                  className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200"
-                >
+                </Button>
+                <Button variant="secondary" onClick={handlePrint}>
                   Print / Save as PDF
-                </button>
+                </Button>
               </div>
             </div>
           )}

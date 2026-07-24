@@ -9,6 +9,7 @@ import { MappedComparisonResults } from "@/components/MappedComparisonResults";
 import { StatsPanel } from "@/components/StatsPanel";
 import { PreviewTable } from "@/components/PreviewTable";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { Button } from "@/components/Button";
 
 export default function ComparatorPage() {
   const [currentFile, setCurrentFile] = useState<File | null>(null);
@@ -123,14 +124,9 @@ export default function ComparatorPage() {
             />
           )}
 
-          <button
-            type="button"
-            disabled={!currentFile || !omsFile || busy || mappings.length === 0}
-            onClick={handleCompare}
-            className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
-          >
+          <Button disabled={!currentFile || !omsFile || busy || mappings.length === 0} onClick={handleCompare}>
             {busy ? "Working..." : "Compare Files"}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -181,21 +177,12 @@ export default function ComparatorPage() {
           {result.mode === "mapped" && <MappedComparisonResults result={result} />}
 
           <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={handleExport}
-              disabled={exporting}
-              className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
-            >
+            <Button onClick={handleExport} disabled={exporting}>
               {exporting ? "Preparing..." : "Save Result Excel"}
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              className="rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200"
-            >
+            </Button>
+            <Button variant="secondary" onClick={reset}>
               New Comparison
-            </button>
+            </Button>
           </div>
         </div>
       )}

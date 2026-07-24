@@ -37,7 +37,7 @@ export function PreviewTable<T>({
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {rows.map((row, i) => (
-            <tr key={i}>
+            <tr key={i} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
               {columns.map((col) => (
                 <td key={col.header} className="px-3 py-2 whitespace-nowrap text-slate-800 dark:text-slate-200">
                   {col.render(row)}

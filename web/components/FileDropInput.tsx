@@ -1,5 +1,7 @@
 "use client";
 
+import { Upload } from "lucide-react";
+
 export function FileDropInput({
   label,
   fileName,
@@ -10,9 +12,10 @@ export function FileDropInput({
   onChange: (file: File) => void;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors hover:border-slate-300 dark:hover:border-slate-700">
       <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</p>
-      <label className="inline-flex cursor-pointer items-center rounded-md bg-slate-800 dark:bg-slate-100 px-3 py-1.5 text-sm font-medium text-white dark:text-slate-900 hover:opacity-90">
+      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-brand-navy px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy/90 dark:bg-brand-cyan dark:text-slate-950 dark:hover:bg-brand-cyan/90">
+        <Upload className="h-3.5 w-3.5" />
         Choose File
         <input
           type="file"
