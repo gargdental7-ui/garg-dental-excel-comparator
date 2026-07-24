@@ -27,7 +27,11 @@ export function QuotationPreview({
   totals: QuotationTotals;
 }) {
   return (
-    <div id="quotation-print-area" className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white p-8 text-slate-900 print:border-0 print:p-0">
+    <div
+      id="quotation-print-area"
+      className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white p-8 text-slate-900 print:border-0 print:p-0"
+      style={{ fontFamily: "Calibri, 'Segoe UI', Candara, Arial, sans-serif", lineHeight: 1.35 }}
+    >
       <div className="text-center">
         <p className="text-lg font-bold italic text-[#1f3864]">{proposal.title || "Proposal"}</p>
         <p className="text-sm">Authorized Distributor - Garg Dental Pvt. Ltd</p>
@@ -80,6 +84,10 @@ export function QuotationPreview({
                   {item.model && <p>MODEL : {item.model}</p>}
                   {item.brand && <p>BRAND: {item.brand}</p>}
                   {item.origin && <p>ORIGIN: {item.origin}</p>}
+                  {item.image && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.image} alt={item.product_name} className="mt-1 h-20 w-20 object-cover" />
+                  )}
                   {item.features.length > 0 && (
                     <>
                       <p className="mt-1 font-semibold">Key Features :</p>
@@ -88,10 +96,8 @@ export function QuotationPreview({
                       ))}
                     </>
                   )}
-                  {item.image && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.image} alt={item.product_name} className="mt-2 h-24 w-24 object-cover" />
-                  )}
+                  {item.mrp > 0 && <p>MRP: {fmt(item.mrp)}</p>}
+                  {item.warranty && <p>Warranty: {item.warranty}</p>}
                 </td>
                 <td className="border border-slate-400 p-2 text-right align-top">{fmt(total.line_total)}</td>
               </tr>

@@ -17,6 +17,8 @@ const EMPTY_MAPPING: ProductColumnMapping = {
   origin: null,
   category: null,
   warranty: null,
+  mrp: null,
+  image_path: null,
 };
 
 export function ProductImportPanel({
@@ -164,6 +166,18 @@ export function ProductImportPanel({
               headers={headers}
               value={mapping.warranty}
               onChange={(v) => setMapping({ ...mapping, warranty: v })}
+            />
+            <ColumnMappingField
+              label="MRP"
+              headers={headers}
+              value={mapping.mrp}
+              onChange={(v) => setMapping({ ...mapping, mrp: v })}
+            />
+            <ColumnMappingField
+              label="Image Path (optional)"
+              headers={headers}
+              value={mapping.image_path}
+              onChange={(v) => setMapping({ ...mapping, image_path: v })}
             />
           </div>
         )}

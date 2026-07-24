@@ -222,6 +222,8 @@ export interface ProductColumnMapping {
   origin: string | null;
   category: string | null;
   warranty: string | null;
+  mrp: string | null;
+  image_path: string | null;
 }
 
 export interface QuotationProductsInspectResponse extends InspectSheetResponse {
@@ -238,6 +240,11 @@ export interface QuotationImportedProduct {
   origin: string;
   category: string;
   warranty: string;
+  mrp: number;
+  // Metadata only - a path/URL string as it appeared in the Excel. Never
+  // resolved server-side (relative to the uploader's filesystem, not this
+  // server); the browser offers to load it only when it's an http(s) URL.
+  image_path: string;
 }
 
 export interface QuotationProductsImportResponse {
@@ -280,6 +287,7 @@ export interface QuotationItem {
   origin: string;
   category: string;
   warranty: string;
+  mrp: number;
   discount_percent: number;
   discount_amount: number;
   image: string | null;

@@ -43,6 +43,7 @@ export function blankQuotationItem(): QuotationItem {
     origin: "",
     category: "",
     warranty: "",
+    mrp: 0,
     discount_percent: 0,
     discount_amount: 0,
     image: null,
@@ -67,5 +68,6 @@ export function quotationItemFromImportedProduct(product: QuotationImportedProdu
     origin: product.origin,
     category: product.category,
     warranty: product.warranty,
+    mrp: product.mrp,
   };
 }

@@ -23,11 +23,25 @@ export function ProductCard({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-50">{item.product_name}</p>
-        <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-          {[item.brand, item.model].filter(Boolean).join(" · ") || " "}
-        </p>
+      <div className="flex min-w-0 items-center gap-3">
+        {item.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.image}
+            alt={item.product_name}
+            className="h-10 w-10 shrink-0 rounded-md border border-slate-200 dark:border-slate-700 object-cover"
+          />
+        ) : (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-slate-700 text-[10px] text-slate-400">
+            No image
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-50">{item.product_name}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+            {[item.brand, item.model].filter(Boolean).join(" · ") || " "}
+          </p>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-4 text-sm text-slate-700 dark:text-slate-300">
         <span>Qty: {item.quantity}</span>

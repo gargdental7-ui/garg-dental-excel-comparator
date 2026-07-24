@@ -5,6 +5,7 @@ import { api, downloadBlob } from "@/lib/apiClient";
 import { ApiError, type QuotationCustomer, type QuotationImportedProduct, type QuotationItem, type QuotationProposal } from "@/lib/types";
 import { blankQuotationItem, defaultQuotationProposal, emptyQuotationCustomer, quotationItemFromImportedProduct } from "@/lib/quotationDefaults";
 import { computeTotals } from "@/lib/quotationTotals";
+import { findDuplicateProducts } from "@/lib/quotationValidation";
 import { CustomerInfoForm } from "@/components/quotation/CustomerInfoForm";
 import { ProposalInfoForm } from "@/components/quotation/ProposalInfoForm";
 import { ModeSelectCards, type QuotationMode } from "@/components/quotation/ModeSelectCards";
@@ -60,30 +61,36 @@ export default function QuotationPage() {
   const [items, dispatchItems] = useReducer(itemsReducer, []);
   const [formSeed, setFormSeed] = useState<QuotationItem | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formImagePathHint, setFormImagePathHint] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
+  const duplicateProducts = useMemo(() => findDuplicateProducts(items), [items]);
 
   function openManualForm() {
     setFormSeed(blankQuotationItem());
     setEditingId(null);
+    setFormImagePathHint("");
   }
 
   function openFormFromProduct(product: QuotationImportedProduct) {
     setFormSeed(quotationItemFromImportedProduct(product));
     setEditingId(null);
+    setFormImagePathHint(product.image_path);
   }
 
   function openEditForm(item: QuotationItem) {
     setFormSeed(item);
     setEditingId(item.id);
+    setFormImagePathHint("");
   }
 
   function closeForm() {
     setFormSeed(null);
     setEditingId(null);
+    setFormImagePathHint("");
   }
 
   function handleFormSave(item: QuotationItem) {
@@ -103,6 +110,10 @@ export default function QuotationPage() {
     }
     if (items.length === 0) {
       setError("Please add at least one product before generating the quotation.");
+      return;
+    }
+    if (duplicateProducts.length > 0) {
+      setError(`The following product(s) were added more than once: ${duplicateProducts.join(", ")}.`);
       return;
     }
     setBusy(true);
@@ -177,7 +188,13 @@ export default function QuotationPage() {
           )}
 
           {formSeed && (
-            <ProductForm initialValue={formSeed} isEditing={!!editingId} onSave={handleFormSave} onCancel={closeForm} />
+            <ProductForm
+              initialValue={formSeed}
+              isEditing={!!editingId}
+              imagePathHint={formImagePathHint}
+              onSave={handleFormSave}
+              onCancel={closeForm}
+            />
           )}
 
           {items.length > 0 && (
@@ -185,6 +202,12 @@ export default function QuotationPage() {
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Selected Products ({items.length})
               </p>
+              {duplicateProducts.length > 0 && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                  Added more than once: {duplicateProducts.join(", ")}. Edit the quantity on one card instead, or
+                  remove the duplicate before generating.
+                </div>
+              )}
               {items.map((item) => (
                 <ProductCard
                   key={item.id}
@@ -204,7 +227,7 @@ export default function QuotationPage() {
                 <button
                   type="button"
                   onClick={handleGenerate}
-                  disabled={busy}
+                  disabled={busy || duplicateProducts.length > 0}
                   className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
                 >
                   {busy ? "Generating..." : "Generate DOCX"}

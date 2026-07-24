@@ -130,19 +130,30 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return readFileAsDataUrl(blob as File);
+}
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value.trim());
+}
+
 export function ProductForm({
   initialValue,
   isEditing,
+  imagePathHint,
   onSave,
   onCancel,
 }: {
   initialValue: QuotationItem;
   isEditing: boolean;
+  imagePathHint?: string;
   onSave: (item: QuotationItem) => void;
   onCancel: () => void;
 }) {
   const [item, setItem] = useState<QuotationItem>(initialValue);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [loadingImageUrl, setLoadingImageUrl] = useState(false);
 
   function set<K extends keyof QuotationItem>(key: K, value: QuotationItem[K]) {
     setItem((prev) => ({ ...prev, [key]: value }));
@@ -163,6 +174,24 @@ export function ProductForm({
       set("image", dataUrl);
     } catch {
       setImageError("Could not read that image file.");
+    }
+  }
+
+  async function handleLoadImageFromUrl() {
+    if (!imagePathHint) return;
+    setImageError(null);
+    setLoadingImageUrl(true);
+    try {
+      const res = await fetch(imagePathHint);
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      if (!blob.type.startsWith("image/")) throw new Error("not an image");
+      const dataUrl = await readBlobAsDataUrl(blob);
+      set("image", dataUrl);
+    } catch {
+      setImageError("Could not load an image from that URL. You can still upload one manually.");
+    } finally {
+      setLoadingImageUrl(false);
     }
   }
 
@@ -189,6 +218,7 @@ export function ProductForm({
         <TextField label="Origin" value={item.origin} onChange={(v) => set("origin", v)} />
         <TextField label="Category" value={item.category} onChange={(v) => set("category", v)} />
         <NumberField label="Price" required value={item.price} onChange={(v) => set("price", v)} />
+        <NumberField label="MRP" value={item.mrp} onChange={(v) => set("mrp", v)} />
         <NumberField label="Quantity" required value={item.quantity} onChange={(v) => set("quantity", v)} />
         <NumberField label="Discount %" value={item.discount_percent} onChange={(v) => set("discount_percent", v)} />
         <NumberField label="Discount Amount" value={item.discount_amount} onChange={(v) => set("discount_amount", v)} />
@@ -199,17 +229,24 @@ export function ProductForm({
 
         <div className="sm:col-span-2">
           <label className={LABEL_CLASS}>Product Image</label>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {item.image && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.image} alt="Product" className="h-16 w-16 rounded-md border border-slate-300 dark:border-slate-700 object-cover" />
+              <img
+                src={item.image}
+                alt="Product preview"
+                className="h-16 w-16 rounded-md border border-slate-300 dark:border-slate-700 object-cover"
+              />
             )}
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => handleImageChange(e.target.files?.[0] ?? null)}
-              className="text-sm text-slate-600 dark:text-slate-400"
-            />
+            <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800">
+              {item.image ? "Replace Image" : "Upload Image"}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="hidden"
+                onChange={(e) => handleImageChange(e.target.files?.[0] ?? null)}
+              />
+            </label>
             {item.image && (
               <button
                 type="button"
@@ -220,6 +257,28 @@ export function ProductForm({
               </button>
             )}
           </div>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">PNG, JPG, JPEG, or WEBP.</p>
+
+          {!item.image && imagePathHint && (
+            <div className="mt-2">
+              {isHttpUrl(imagePathHint) ? (
+                <button
+                  type="button"
+                  onClick={handleLoadImageFromUrl}
+                  disabled={loadingImageUrl}
+                  className="rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {loadingImageUrl ? "Loading..." : "Load image from URL (from Excel)"}
+                </button>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Excel lists an image path (&quot;{imagePathHint}&quot;) that can&apos;t be loaded automatically from
+                  a local file path - please upload the image manually.
+                </p>
+              )}
+            </div>
+          )}
+
           {imageError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{imageError}</p>}
         </div>
 
