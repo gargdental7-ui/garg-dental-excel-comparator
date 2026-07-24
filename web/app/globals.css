@@ -12,6 +12,11 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Garg Dental brand colors, taken directly from the official logo
+     (web/public/brand/) rather than an invented palette. */
+  --color-brand-navy: #1f3864;
+  --color-brand-cyan: #29abe2;
 }
 
 body {

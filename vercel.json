@@ -1,0 +1,14 @@
+{
+  "services": {
+    "frontend": { "root": "web/" },
+    "backend": {
+      "root": "server/",
+      "entrypoint": "index:app",
+      "installCommand": "rm -rf app && cp -r ../app ./app && pip install -r requirements.txt"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ]
+}

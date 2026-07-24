@@ -9,3 +9,15 @@ logs/
 .pytest_cache/
 *.egg-info/
 .DS_Store
+
+# Web app (web/ has its own .gitignore for node_modules etc.)
+# server/app is a tracked symlink to ../app (for local `vercel dev`);
+# cloud builds replace it with a real copy via vercel.json's installCommand.
+.vercel/
+web/.vercel/
+server/.vercel/
+server/.env
+server/.env.*
+web/.env.local
+.env
+.env.local
