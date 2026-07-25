@@ -1,15 +1,16 @@
 import Link from "next/link";
-import { Lock } from "lucide-react";
+import { FileText, Lock } from "lucide-react";
 import { COMPANIES } from "@/lib/companies";
+import { PageHeader } from "@/components/PageHeader";
 
 export default function QuotationCompanySelectPage() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Smart Quotation Generator</h1>
-      <p className="mb-8 text-sm text-slate-600 dark:text-slate-400">
-        Select a company to build a quotation for. Each company has its own branding, template, and terms - the
-        quotation engine underneath is shared.
-      </p>
+      <PageHeader
+        icon={FileText}
+        title="Smart Quotation Generator"
+        description="Select a company to build a quotation for. Each company has its own branding, template, and terms - the quotation engine underneath is shared."
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {COMPANIES.map((company) =>

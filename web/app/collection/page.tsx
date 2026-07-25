@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Landmark } from "lucide-react";
 import { api, downloadBlob } from "@/lib/apiClient";
 import {
   ApiError,
@@ -15,6 +16,7 @@ import { StatsPanel } from "@/components/StatsPanel";
 import { PreviewTable } from "@/components/PreviewTable";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Button } from "@/components/Button";
+import { PageHeader } from "@/components/PageHeader";
 
 const EMPTY_MAPPING: CollectionColumnMapping = {
   customer: null,
@@ -108,10 +110,11 @@ export default function CollectionPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Collection Priority Analyzer</h1>
-      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
-        Upload an outstanding/receivables report to find out who to follow up with first.
-      </p>
+      <PageHeader
+        icon={Landmark}
+        title="Collection Priority Analyzer"
+        description="Upload an outstanding/receivables report to find out who to follow up with first."
+      />
 
       <ErrorBanner message={error} />
 
@@ -120,10 +123,12 @@ export default function CollectionPage() {
           <FileDropInput
             label="Outstanding / Receivables File"
             fileName={file?.name ?? null}
+            fileSize={file?.size}
             onChange={(f) => {
               setFile(f);
               loadFile(f);
             }}
+            onClear={reset}
           />
 
           {sheetNames.length > 1 && (

@@ -43,7 +43,14 @@ function LoginForm() {
         onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-sm"
       >
-        <Image src="/brand/garg-dental-logo.png" alt="Garg Dental" width={140} height={103} className="mx-auto mb-4 h-20 w-auto" />
+        <Image
+          src="/brand/garg-dental-logo.png"
+          alt="Garg Dental"
+          width={140}
+          height={103}
+          priority
+          className="mx-auto mb-4 h-20 w-auto"
+        />
         <h1 className="text-center text-lg font-bold text-slate-900 dark:text-slate-50">Garg Dental</h1>
         <p className="mb-6 text-center text-sm text-slate-500 dark:text-slate-400">Operations Toolkit</p>
 

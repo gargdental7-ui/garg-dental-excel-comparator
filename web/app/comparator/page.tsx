@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { GitCompare } from "lucide-react";
 import { api, downloadBlob } from "@/lib/apiClient";
 import { ApiError, type CellDifference, type ColumnMappingPair, type ComparatorAnalyzeResult } from "@/lib/types";
 import { FileDropInput } from "@/components/FileDropInput";
@@ -10,6 +11,7 @@ import { StatsPanel } from "@/components/StatsPanel";
 import { PreviewTable } from "@/components/PreviewTable";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Button } from "@/components/Button";
+import { PageHeader } from "@/components/PageHeader";
 
 export default function ComparatorPage() {
   const [currentFile, setCurrentFile] = useState<File | null>(null);
@@ -88,11 +90,11 @@ export default function ComparatorPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Excel Comparator</h1>
-      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
-        Compare two Excel reports by product Code. Map one column for a quick single-field check, or several
-        (including differently-named columns) for a full Column Comparison Report.
-      </p>
+      <PageHeader
+        icon={GitCompare}
+        title="Excel Comparator"
+        description="Compare two Excel reports by product Code. Map one column for a quick single-field check, or several (including differently-named columns) for a full Column Comparison Report."
+      />
 
       <ErrorBanner message={error} />
 
@@ -101,17 +103,31 @@ export default function ComparatorPage() {
           <FileDropInput
             label="Current File"
             fileName={currentFile?.name ?? null}
+            fileSize={currentFile?.size}
             onChange={(file) => {
               setCurrentFile(file);
               loadPair(file, omsFile);
+            }}
+            onClear={() => {
+              setCurrentFile(null);
+              setCurrentHeaders([]);
+              setOmsHeaders([]);
+              setMappings([]);
             }}
           />
           <FileDropInput
             label="Latest OMS File"
             fileName={omsFile?.name ?? null}
+            fileSize={omsFile?.size}
             onChange={(file) => {
               setOmsFile(file);
               loadPair(currentFile, file);
+            }}
+            onClear={() => {
+              setOmsFile(null);
+              setCurrentHeaders([]);
+              setOmsHeaders([]);
+              setMappings([]);
             }}
           />
 

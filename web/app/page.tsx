@@ -46,7 +46,7 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-5xl px-6 py-12 sm:py-16">
       <div className="flex items-center gap-4">
-        <Image src="/brand/garg-dental-mark.png" alt="Garg Dental" width={48} height={48} className="h-12 w-12" />
+        <Image src="/brand/garg-dental-mark.png" alt="Garg Dental" width={48} height={48} priority className="h-12 w-12" />
         <div>
           <p className="text-sm font-medium text-brand-cyan">{greeting()}</p>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50">

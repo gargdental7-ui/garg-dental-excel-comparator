@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PackageSearch } from "lucide-react";
 import { api, downloadBlob } from "@/lib/apiClient";
 import {
   ApiError,
@@ -13,6 +14,7 @@ import { ColumnMappingField } from "@/components/ColumnMappingField";
 import { ThresholdField } from "@/components/ThresholdField";
 import { StatsPanel } from "@/components/StatsPanel";
 import { PreviewTable } from "@/components/PreviewTable";
+import { PageHeader } from "@/components/PageHeader";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Button } from "@/components/Button";
 
@@ -119,10 +121,11 @@ export default function InventoryPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Inventory Movement Analyzer</h1>
-      <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
-        Upload a stock movement report to classify fast/slow/dead stock for the uploaded period.
-      </p>
+      <PageHeader
+        icon={PackageSearch}
+        title="Inventory Movement Analyzer"
+        description="Upload a stock movement report to classify fast/slow/dead stock for the uploaded period."
+      />
 
       <ErrorBanner message={error} />
 
@@ -131,10 +134,12 @@ export default function InventoryPage() {
           <FileDropInput
             label="Inventory / Stock Movement File"
             fileName={file?.name ?? null}
+            fileSize={file?.size}
             onChange={(f) => {
               setFile(f);
               loadFile(f);
             }}
+            onClear={reset}
           />
 
           {sheetNames.length > 1 && (
