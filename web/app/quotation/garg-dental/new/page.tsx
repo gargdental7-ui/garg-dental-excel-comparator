@@ -22,6 +22,21 @@ import { Button } from "@/components/Button";
 
 const COMPANY_ID = "garg_dental";
 
+// Nothing here is ever sent anywhere until "Generate DOCX" - this is purely
+// a local, in-browser draft so a refresh (or an accidental tab close)
+// doesn't lose an in-progress quotation. Versioned key so a future change
+// to the draft shape can't crash on an old stored draft.
+const DRAFT_STORAGE_KEY = "gd_quotation_draft_v1";
+
+interface QuotationDraft {
+  customer: QuotationCustomer;
+  proposal: QuotationProposal;
+  mode: QuotationMode | null;
+  items: QuotationItem[];
+  excelProducts: QuotationImportedProduct[] | null;
+  excelFileName: string;
+}
+
 function stripClientId(item: QuotationItem): Omit<QuotationItem, "id"> {
   const rest: Partial<QuotationItem> = { ...item };
   delete rest.id;
@@ -32,7 +47,8 @@ type ItemsAction =
   | { type: "add"; item: QuotationItem }
   | { type: "update"; id: string; item: QuotationItem }
   | { type: "duplicate"; id: string }
-  | { type: "delete"; id: string };
+  | { type: "delete"; id: string }
+  | { type: "load"; items: QuotationItem[] };
 
 function itemsReducer(state: QuotationItem[], action: ItemsAction): QuotationItem[] {
   switch (action.type) {
@@ -47,6 +63,8 @@ function itemsReducer(state: QuotationItem[], action: ItemsAction): QuotationIte
     }
     case "delete":
       return state.filter((it) => it.id !== action.id);
+    case "load":
+      return action.items;
     default:
       return state;
   }
@@ -70,6 +88,60 @@ export default function GargDentalNewQuotePage() {
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
   const duplicateProducts = useMemo(() => findDuplicateProducts(items), [items]);
+
+  // Restore a draft left over from before a refresh/close. Done in an
+  // effect (not a useState lazy initializer) so server and first-client
+  // render both start from the same empty defaults - no hydration mismatch.
+  const [hydrated, setHydrated] = useState(false);
+  /* eslint-disable react-hooks/set-state-in-effect --
+     localStorage can only be read client-side, and this must run exactly
+     once after mount to seed React state from it - there is no prop/state
+     this could be derived from instead, so the usual "don't setState in an
+     effect" guidance doesn't apply here. */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as Partial<QuotationDraft>;
+        if (draft.customer) setCustomer(draft.customer);
+        if (draft.proposal) setProposal(draft.proposal);
+        if (draft.mode) setMode(draft.mode);
+        if (Array.isArray(draft.items)) dispatchItems({ type: "load", items: draft.items });
+        if (Array.isArray(draft.excelProducts)) setExcelProducts(draft.excelProducts);
+        if (draft.excelFileName) setExcelFileName(draft.excelFileName);
+      }
+    } catch {
+      // Corrupt or old-shape draft - ignore it and start fresh rather than
+      // block the page from loading.
+    } finally {
+      setHydrated(true);
+    }
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Autosave, debounced so typing in a text field doesn't stringify/write
+  // on every keystroke. Gated on `hydrated` so this can't fire with the
+  // still-empty initial state and clobber a draft before it's been read.
+  useEffect(() => {
+    if (!hydrated) return;
+    const timeout = setTimeout(() => {
+      const draft: QuotationDraft = { customer, proposal, mode, items, excelProducts, excelFileName };
+      try {
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      } catch {
+        // Most likely quota exceeded from embedded product images (base64
+        // data URLs) - retry once without them rather than losing the rest
+        // of the draft (customer/proposal/line items) entirely.
+        try {
+          const withoutImages = { ...draft, items: items.map((it) => ({ ...it, image: null })) };
+          localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(withoutImages));
+        } catch {
+          // Persistence is a convenience, not a requirement - give up quietly.
+        }
+      }
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [hydrated, customer, proposal, mode, items, excelProducts, excelFileName]);
 
   // The form renders wherever it was triggered from (e.g. below a long
   // Browse Products list), often outside the current viewport - without
@@ -137,6 +209,9 @@ export default function GargDentalNewQuotePage() {
         items: items.map((item) => stripClientId(item)),
       });
       downloadBlob(blob, filename);
+      // The quotation is done and downloaded - a refresh from here on
+      // should start clean rather than keep restoring a finished draft.
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "An unexpected error occurred.");
     } finally {
