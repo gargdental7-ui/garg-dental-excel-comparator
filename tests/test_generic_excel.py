@@ -131,6 +131,24 @@ def _row_of_blanks(n):
     return [None] * n
 
 
+def test_detect_header_row_index_finds_mostly_text_product_catalog_row():
+    # Product catalogs are mostly text (name/brand/model/origin) with only
+    # one or two numeric columns (price) - a data row like this has a
+    # numeric ratio well under the old 30% threshold, so this guards against
+    # regressing to that stricter (and, for product catalogs, wrong) check.
+    wb = _wb_from_rows(
+        [
+            ["Product Name", "Price", "Brand", "Model", "Origin"],
+            ["RVG Sensor", 108000, "Woodpecker", "H1", "China"],
+        ]
+    )
+    result = generic_excel.detect_header_row_index(wb.active)
+    assert result is not None
+    row_idx, cleaned, _max_col, _count = result
+    assert row_idx == 1
+    assert cleaned == ["Product Name", "Price", "Brand", "Model", "Origin"]
+
+
 def test_detect_header_row_index_scans_forward_for_erp_style_export():
     rows = (
         [["Product Catalog Export"], ["Generated: 2026-07-25"], []]

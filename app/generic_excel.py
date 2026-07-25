@@ -136,7 +136,11 @@ def detect_header_row_index(ws, max_scan_rows=MAX_HEADER_SCAN_ROWS):
 
         # Otherwise look ahead (tolerating blank spacer rows) for the first
         # row that looks like data, confirming this candidate is a real
-        # header rather than another title/label line.
+        # header rather than another title/label line. At least one
+        # numeric-looking cell is enough evidence - requiring a numeric
+        # *majority* (as this used to) misses ordinary product-catalog rows,
+        # which are mostly text (name/brand/model/origin) with only a price
+        # or two actually numeric.
         lookahead_limit = min(ws.max_row, row_idx + 5)
         for probe in range(row_idx + 1, lookahead_limit + 1):
             probe_raw = _row_raw_values(ws, probe, max_col)
@@ -145,7 +149,7 @@ def detect_header_row_index(ws, max_scan_rows=MAX_HEADER_SCAN_ROWS):
             if not probe_non_blank:
                 continue
             probe_numeric_count = sum(1 for v in probe_raw if _looks_numeric(v))
-            if (probe_numeric_count / len(probe_non_blank)) > 0.3:
+            if probe_numeric_count >= 1:
                 return row_idx, cleaned, max_col, 1
             break
 
