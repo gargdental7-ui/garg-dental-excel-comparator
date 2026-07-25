@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api, downloadBlob } from "@/lib/apiClient";
 import { ApiError, type QuotationCustomer, type QuotationImportedProduct, type QuotationItem, type QuotationProposal } from "@/lib/types";
 import { blankQuotationItem, defaultQuotationProposal, emptyQuotationCustomer, quotationItemFromImportedProduct } from "@/lib/quotationDefaults";
@@ -70,6 +70,16 @@ export default function GargDentalNewQuotePage() {
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
   const duplicateProducts = useMemo(() => findDuplicateProducts(items), [items]);
+
+  // The form renders wherever it was triggered from (e.g. below a long
+  // Browse Products list), often outside the current viewport - without
+  // this, clicking "Select" looks like nothing happened.
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (formSeed) {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [formSeed]);
 
   function openManualForm() {
     setFormSeed(blankQuotationItem());
@@ -186,13 +196,15 @@ export default function GargDentalNewQuotePage() {
           )}
 
           {formSeed && (
-            <ProductForm
-              initialValue={formSeed}
-              isEditing={!!editingId}
-              imagePathHint={formImagePathHint}
-              onSave={handleFormSave}
-              onCancel={closeForm}
-            />
+            <div ref={formRef}>
+              <ProductForm
+                initialValue={formSeed}
+                isEditing={!!editingId}
+                imagePathHint={formImagePathHint}
+                onSave={handleFormSave}
+                onCancel={closeForm}
+              />
+            </div>
           )}
 
           {items.length > 0 && (
