@@ -5,7 +5,8 @@ quotation never involves a file upload."""
 import json
 from typing import List, Optional
 
-from app import quotation
+from app import generic_excel, quotation
+from app.exceptions import GenericHeaderDetectionError, InvalidHeaderRowError
 from app.quotation import ProductColumnMapping, QuotationCustomer, QuotationItem, QuotationProposal
 from app.quotation_companies import get_company
 from app.quotation_docx import default_output_filename, render_quotation_docx
@@ -15,40 +16,96 @@ from pydantic import BaseModel
 
 from _auth import require_auth
 from _errors import handle_app_errors
-from _excel_loading import load_sheet, open_workbook
+from _excel_loading import open_workbook
 from _mapping_heuristics import PRODUCT_CANDIDATES, suggest_mapping
 from _serialization import mapping_kwargs
 from _tempfiles import temp_upload_path
 
 router = APIRouter(prefix="/api/quotation", dependencies=[Depends(require_auth)])
 
+# Matches the "AUTOMATIC HEADER DETECTION" spec: check row 1 first, then
+# scan up to the first 20 rows before giving up and asking the user to pick
+# the header row manually - detection failing here is never fatal (see
+# _resolve_header_row), unlike Collection/Inventory's hard-fail behavior.
+PRODUCT_HEADER_SCAN_ROWS = 20
+PRODUCT_PREVIEW_ROWS = 20
 
-def _load(file: UploadFile, sheet: Optional[str]):
-    with temp_upload_path(file) as path:
-        workbook = open_workbook(path)
-        sheet_names = workbook.sheetnames
-        selected_sheet = sheet or sheet_names[0]
-        data = load_sheet(workbook, selected_sheet)
-    return sheet_names, selected_sheet, data
+
+def _resolve_header_row(worksheet, header_row: Optional[int]):
+    """Returns (effective_row, detected_row): the row to actually read
+    headers from, and the row auto-detection would have picked (for
+    display, even when the caller overrides it). effective_row is the
+    caller's explicit choice when given (validated against the sheet's
+    actual row count), otherwise the auto-detected row, or None if neither
+    is available. Only an out-of-range manual row raises - a failed
+    auto-detection alone never does, so the caller can fall back to
+    showing the preview and asking the user to pick a row by hand."""
+    detected = generic_excel.detect_header_row_index(worksheet, max_scan_rows=PRODUCT_HEADER_SCAN_ROWS)
+    detected_row = detected[0] if detected else None
+
+    if header_row is not None:
+        if header_row < 1 or header_row > worksheet.max_row:
+            raise InvalidHeaderRowError(header_row, worksheet.max_row)
+        return header_row, detected_row
+
+    return detected_row, detected_row
 
 
 @router.post("/products/inspect")
 @handle_app_errors
-def inspect_products(file: UploadFile = File(...), sheet: Optional[str] = Form(None)):
-    sheet_names, selected_sheet, data = _load(file, sheet)
+def inspect_products(
+    file: UploadFile = File(...),
+    sheet: Optional[str] = Form(None),
+    header_row: Optional[int] = Form(None),
+):
+    with temp_upload_path(file) as path:
+        workbook = open_workbook(path)
+        sheet_names = workbook.sheetnames
+        selected_sheet = sheet or sheet_names[0]
+        worksheet = workbook[selected_sheet]
+
+        preview_rows = generic_excel.read_preview_rows(worksheet, max_rows=PRODUCT_PREVIEW_ROWS)
+        effective_row, detected_row = _resolve_header_row(worksheet, header_row)
+
+        if effective_row is None:
+            headers, row_count = [], 0
+        else:
+            data = generic_excel.load_generic_sheet_at_row(workbook, selected_sheet, effective_row)
+            headers, row_count = data.headers, len(data.rows)
+
     return {
         "sheet_names": sheet_names,
         "selected_sheet": selected_sheet,
-        "headers": data.headers,
-        "row_count": len(data.rows),
-        "suggested_mapping": suggest_mapping(data.headers, PRODUCT_CANDIDATES),
+        "preview_rows": preview_rows,
+        "detected_header_row": detected_row,
+        "header_row": effective_row,
+        "header_detected": detected_row is not None,
+        "headers": headers,
+        "row_count": row_count,
+        "suggested_mapping": suggest_mapping(headers, PRODUCT_CANDIDATES),
     }
 
 
 @router.post("/products/import")
 @handle_app_errors
-def import_products(file: UploadFile = File(...), sheet: str = Form(...), mapping: str = Form(...)):
-    _, _, data = _load(file, sheet)
+def import_products(
+    file: UploadFile = File(...),
+    sheet: str = Form(...),
+    mapping: str = Form(...),
+    header_row: Optional[int] = Form(None),
+):
+    with temp_upload_path(file) as path:
+        workbook = open_workbook(path)
+        worksheet = workbook[sheet]
+        # header_row is omitted only by callers that never fetched a
+        # preview (e.g. older clients) - fall back to auto-detect so those
+        # imports keep working exactly as before; GenericHeaderDetectionError
+        # still surfaces if that fails, same as the old behavior.
+        effective_row, _detected_row = _resolve_header_row(worksheet, header_row)
+        if effective_row is None:
+            raise GenericHeaderDetectionError("uploaded file")
+        data = generic_excel.load_generic_sheet_at_row(workbook, sheet, effective_row)
+
     mapping_obj = ProductColumnMapping(**mapping_kwargs(ProductColumnMapping, json.loads(mapping)))
     products = quotation.map_product_rows(data.headers, data.rows, mapping_obj)
     # Not capped by a preview limit like the diff/comparison routes -
