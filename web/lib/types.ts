@@ -226,8 +226,25 @@ export interface ProductColumnMapping {
   image_path: string | null;
 }
 
+export interface ExcelPreviewRow {
+  row: number;
+  values: string[];
+}
+
 export interface QuotationProductsInspectResponse extends InspectSheetResponse {
   suggested_mapping: ProductColumnMapping;
+  // First ~20 raw rows of the sheet, for the "confirm your header row"
+  // preview - independent of whether a header row could be resolved yet.
+  preview_rows: ExcelPreviewRow[];
+  // The row automatic detection picked, for display, even when header_row
+  // below reflects a manual override instead.
+  detected_header_row: number | null;
+  // The row actually used to build `headers`/`row_count`/`suggested_mapping`
+  // - the manual override if one was sent, otherwise the detected row, or
+  // null if neither is available (detection failed and no row was chosen
+  // yet - never an error, just an empty/unresolved state).
+  header_row: number | null;
+  header_detected: boolean;
 }
 
 export interface QuotationImportedProduct {

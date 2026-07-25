@@ -154,17 +154,19 @@ export const api = {
     },
   },
   quotation: {
-    inspectProducts: (file: File, sheet?: string) => {
+    inspectProducts: (file: File, sheet?: string, headerRow?: number) => {
       const form = new FormData();
       form.append("file", file);
       if (sheet) form.append("sheet", sheet);
+      if (headerRow != null) form.append("header_row", String(headerRow));
       return postForm<QuotationProductsInspectResponse>(`/api/quotation/products/inspect`, form);
     },
-    importProducts: (file: File, sheet: string, mapping: ProductColumnMapping) => {
+    importProducts: (file: File, sheet: string, mapping: ProductColumnMapping, headerRow?: number) => {
       const form = new FormData();
       form.append("file", file);
       form.append("sheet", sheet);
       form.append("mapping", JSON.stringify(mapping));
+      if (headerRow != null) form.append("header_row", String(headerRow));
       return postForm<QuotationProductsImportResponse>(`/api/quotation/products/import`, form);
     },
     generate: (payload: GenerateQuotationRequest) => postJsonForBlob(`/api/quotation/generate`, payload),
