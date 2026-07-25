@@ -47,6 +47,11 @@ class GenericHeaderDetectionError(AppError):
         )
 
 
+class InvalidHeaderRowError(AppError):
+    def __init__(self, requested_row, max_row):
+        super().__init__(f"Row {requested_row} is not a valid row in this sheet (it has {max_row} row(s)).")
+
+
 class MissingColumnMappingError(AppError):
     def __init__(self, missing_fields):
         fields = ", ".join(missing_fields)

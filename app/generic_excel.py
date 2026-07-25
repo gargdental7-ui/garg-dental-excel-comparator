@@ -89,13 +89,21 @@ def _dedupe_headers(headers):
     return result
 
 
-def detect_generic_header(ws, file_label, max_scan_rows=MAX_HEADER_SCAN_ROWS):
-    """Locate the header row by scanning for a text-heavy row immediately
-    followed by data (numbers/dates), or - for the known Garg Dental
-    two-row layout - a text-heavy row followed by a mostly-blank sub-header
-    row (e.g. "Qty") and then data."""
+def detect_header_row_index(ws, max_scan_rows=MAX_HEADER_SCAN_ROWS):
+    """Best-effort header-row scan: a text-heavy row immediately followed by
+    data (numbers/dates), or - for the known Garg Dental two-row layout - a
+    text-heavy row followed by a mostly-blank sub-header row (e.g. "Qty")
+    and then data. Row 1 is checked first, and the first matching row wins,
+    so a well-formed standard workbook (header in row 1) is recognized
+    immediately without scanning further.
+
+    Returns None instead of raising when nothing in the scan window looks
+    like a header - for flows where automatic detection is only a
+    suggestion the user can override (e.g. the product importer), not a
+    hard requirement. `detect_generic_header` below is the raising
+    equivalent used by flows that have no manual-override fallback."""
     if ws.max_row == 0 or ws.max_column == 0:
-        raise GenericHeaderDetectionError(file_label)
+        return None
 
     max_col = ws.max_column
     scan_limit = min(ws.max_row, max_scan_rows)
@@ -141,19 +149,27 @@ def detect_generic_header(ws, file_label, max_scan_rows=MAX_HEADER_SCAN_ROWS):
                 return row_idx, cleaned, max_col, 1
             break
 
-    raise GenericHeaderDetectionError(file_label)
+    return None
+
+
+def detect_generic_header(ws, file_label, max_scan_rows=MAX_HEADER_SCAN_ROWS):
+    """Raising wrapper around detect_header_row_index, for flows (Collection,
+    Inventory) that have no manual-header-row fallback and must fail loudly
+    when nothing in the scan window looks like a header."""
+    result = detect_header_row_index(ws, max_scan_rows)
+    if result is None:
+        raise GenericHeaderDetectionError(file_label)
+    return result
 
 
 def _is_blank_row(values):
     return all(v is None or (isinstance(v, str) and v.strip() == "") for v in values)
 
 
-def load_generic_sheet(workbook, sheet_name, file_label, max_scan_rows=MAX_HEADER_SCAN_ROWS):
-    worksheet = workbook[sheet_name]
-    row_idx, header_values, max_col, header_row_count = detect_generic_header(
-        worksheet, file_label, max_scan_rows
-    )
-
+def _extract_sheet_data(worksheet, row_idx, header_values, header_row_count, sheet_name):
+    """Build the final headers list (trimmed of trailing blanks, deduped)
+    and pull data rows starting right after the header block - shared by
+    both the auto-detected and the explicit/manual header-row paths below."""
     last_named = 0
     for i, h in enumerate(header_values, start=1):
         if h:
@@ -180,3 +196,37 @@ def load_generic_sheet(workbook, sheet_name, file_label, max_scan_rows=MAX_HEADE
         rows=rows,
         row_excel_indexes=row_excel_indexes,
     )
+
+
+def load_generic_sheet(workbook, sheet_name, file_label, max_scan_rows=MAX_HEADER_SCAN_ROWS):
+    worksheet = workbook[sheet_name]
+    row_idx, header_values, max_col, header_row_count = detect_generic_header(
+        worksheet, file_label, max_scan_rows
+    )
+    return _extract_sheet_data(worksheet, row_idx, header_values, header_row_count, sheet_name)
+
+
+def load_generic_sheet_at_row(workbook, sheet_name, header_row):
+    """Load a sheet using an explicit, caller-confirmed 1-indexed header
+    row - no auto-detection and no two-row sub-header heuristics (a
+    manually chosen row means the user has visually confirmed it, so the
+    very next row is always treated as data). Used by flows where header
+    detection is only a suggestion the user can override, e.g. the Smart
+    Quotation Generator's product importer."""
+    worksheet = workbook[sheet_name]
+    max_col = worksheet.max_column
+    header_values = [_clean(v) for v in _row_raw_values(worksheet, header_row, max_col)]
+    return _extract_sheet_data(worksheet, header_row, header_values, 1, sheet_name)
+
+
+def read_preview_rows(worksheet, max_rows=20):
+    """Raw first `max_rows` rows (1-indexed), cell values cleaned to plain
+    strings but otherwise uninterpreted - lets the user visually confirm
+    which row holds the real column titles before (or instead of) relying
+    on automatic detection."""
+    max_col = worksheet.max_column
+    limit = min(worksheet.max_row, max_rows)
+    return [
+        {"row": r, "values": [_clean(v) for v in _row_raw_values(worksheet, r, max_col)]}
+        for r in range(1, limit + 1)
+    ]
