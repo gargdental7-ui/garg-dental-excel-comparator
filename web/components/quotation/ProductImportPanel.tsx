@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { api } from "@/lib/apiClient";
-import { ApiError, type ProductColumnMapping, type QuotationImportedProduct } from "@/lib/types";
+import { ApiError, type ExcelPreviewRow, type ProductColumnMapping, type QuotationImportedProduct } from "@/lib/types";
 import { FileDropInput } from "@/components/FileDropInput";
 import { ColumnMappingField } from "@/components/ColumnMappingField";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { ExcelPreviewTable } from "@/components/quotation/ExcelPreviewTable";
+import { HeaderRowSelector } from "@/components/quotation/HeaderRowSelector";
 
 const EMPTY_MAPPING: ProductColumnMapping = {
   product_name: null,
@@ -29,36 +31,66 @@ export function ProductImportPanel({
   const [file, setFile] = useState<File | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [sheet, setSheet] = useState<string>("");
+  const [previewRows, setPreviewRows] = useState<ExcelPreviewRow[]>([]);
+  const [detectedHeaderRow, setDetectedHeaderRow] = useState<number | null>(null);
+  const [headerRow, setHeaderRow] = useState<number | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [mapping, setMapping] = useState<ProductColumnMapping>(EMPTY_MAPPING);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imported, setImported] = useState(false);
 
-  async function loadFile(nextFile: File, nextSheet?: string) {
+  function resetFileState() {
+    setSheetNames([]);
+    setSheet("");
+    setPreviewRows([]);
+    setDetectedHeaderRow(null);
+    setHeaderRow(null);
+    setHeaders([]);
+    setMapping(EMPTY_MAPPING);
+    setImported(false);
+  }
+
+  async function loadFile(nextFile: File, nextSheet?: string, nextHeaderRow?: number) {
     setBusy(true);
     setError(null);
     try {
-      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet);
+      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet, nextHeaderRow);
       setSheetNames(inspection.sheet_names);
       setSheet(inspection.selected_sheet);
+      setPreviewRows(inspection.preview_rows);
+      setDetectedHeaderRow(inspection.detected_header_row);
+      setHeaderRow(inspection.header_row);
       setHeaders(inspection.headers);
       setMapping(inspection.suggested_mapping);
       setImported(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "An unexpected error occurred.");
+      setPreviewRows([]);
+      setDetectedHeaderRow(null);
+      setHeaderRow(null);
       setHeaders([]);
     } finally {
       setBusy(false);
     }
   }
 
+  // Header row changes (clicking a preview row, typing a row number, or
+  // "Use detected row") never require re-uploading the file - the browser
+  // still holds it in `file`, so this just re-POSTs it with the new
+  // header_row and the preview/mapping refresh from the response.
+  function handleHeaderRowChange(row: number) {
+    if (!file) return;
+    setHeaderRow(row);
+    loadFile(file, sheet, row);
+  }
+
   async function handleImport() {
-    if (!file || !sheet) return;
+    if (!file || !sheet || headerRow == null) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await api.quotation.importProducts(file, sheet, mapping);
+      const result = await api.quotation.importProducts(file, sheet, mapping, headerRow);
       setImported(true);
       onImported(result.products, file.name);
     } catch (err) {
@@ -68,7 +100,7 @@ export function ProductImportPanel({
     }
   }
 
-  const canImport = !!file && !!sheet && !!mapping.product_name && !!mapping.price;
+  const canImport = !!file && !!sheet && headerRow != null && !!mapping.product_name && !!mapping.price;
 
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
@@ -78,9 +110,16 @@ export function ProductImportPanel({
         <FileDropInput
           label="Product Excel"
           fileName={file?.name ?? null}
+          fileSize={file?.size}
           onChange={(f) => {
             setFile(f);
+            resetFileState();
             loadFile(f);
+          }}
+          onClear={() => {
+            setFile(null);
+            resetFileState();
+            setError(null);
           }}
         />
 
@@ -101,6 +140,25 @@ export function ProductImportPanel({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {previewRows.length > 0 && (
+          <div className="space-y-3">
+            <div>
+              <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Excel Preview</p>
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                The highlighted row is used as the header. Click any row below to use it instead.
+              </p>
+              <ExcelPreviewTable rows={previewRows} headerRow={headerRow} onSelectRow={handleHeaderRowChange} />
+            </div>
+
+            <HeaderRowSelector
+              detectedRow={detectedHeaderRow}
+              headerRow={headerRow}
+              maxRow={previewRows[previewRows.length - 1]?.row ?? previewRows.length}
+              onChange={handleHeaderRowChange}
+            />
           </div>
         )}
 
@@ -182,11 +240,18 @@ export function ProductImportPanel({
           </div>
         )}
 
-        {headers.length > 0 && (
+        {previewRows.length > 0 && (
           <button
             type="button"
             disabled={!canImport || busy}
             onClick={handleImport}
+            title={
+              headerRow == null
+                ? "Choose a header row above first"
+                : !mapping.product_name || !mapping.price
+                  ? "Map Product Name and Price above first"
+                  : undefined
+            }
             className="rounded-md bg-slate-800 dark:bg-slate-100 px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 disabled:opacity-50"
           >
             {busy ? "Working..." : imported ? "Re-import Products" : "Import Products"}
