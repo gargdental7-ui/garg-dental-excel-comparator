@@ -366,11 +366,36 @@ def edit_product_table(doc):
     return table
 
 
+def copy_cell_borders(source_cell, target_cell):
+    """Copy a cell's <w:tcBorders> (and vertical alignment) from
+    `source_cell` onto `target_cell`. table.add_row() creates brand-new
+    cells with no border formatting at all - the table itself has no
+    default border style, so without this the row renders with no visible
+    grid lines at all, unlike every real product row above it."""
+    source_tcPr = source_cell._tc.find(qn("w:tcPr"))
+    if source_tcPr is None:
+        return
+    target_tcPr = target_cell._tc.get_or_add_tcPr()
+    for tag in ("w:tcBorders", "w:vAlign"):
+        existing = target_tcPr.find(qn(tag))
+        if existing is not None:
+            target_tcPr.remove(existing)
+        source_el = source_tcPr.find(qn(tag))
+        if source_el is not None:
+            target_tcPr.append(copy.deepcopy(source_el))
+
+
 def append_totals_rows(table):
+    # The real product content row - still carries the reference document's
+    # actual per-cell border formatting (see copy_cell_borders).
+    style_row = table.rows[2]
+
     def add_row(label, value_expr, bold=False):
         row = table.add_row()
         row.cells[1].text = label
         row.cells[2].text = value_expr
+        for i, cell in enumerate(row.cells):
+            copy_cell_borders(style_row.cells[i], cell)
         if bold:
             for cell in (row.cells[1], row.cells[2]):
                 for run in cell.paragraphs[0].runs:
