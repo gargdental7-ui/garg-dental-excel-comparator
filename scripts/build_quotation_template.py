@@ -16,6 +16,7 @@ from pathlib import Path
 
 import docx
 from docx.oxml.ns import qn
+from docx.shared import Mm
 
 OUTPUT_PATH = Path(__file__).parent.parent / "app" / "quotation_templates" / "equipment_proposal_garg_dental.docx"
 
@@ -34,6 +35,38 @@ def clear_other_runs(paragraph, keep_index=0, skip_indexes=()):
 def strip_drawings(run):
     for drawing in run._r.findall(qn("w:drawing")):
         run._r.remove(drawing)
+
+
+def strip_numpr(paragraph):
+    """Remove bullet-list numbering from `paragraph`, if any. Used on
+    {%p for%}/{%p endfor%}/{%p if%}/{%p endif%} tag paragraphs and on
+    label lines that were cloned from a bulleted line - those paragraphs
+    still render an (empty) bullet glyph even though their text collapses
+    to nothing, unless the numPr is explicitly removed."""
+    pPr = paragraph._p.find(qn("w:pPr"))
+    if pPr is None:
+        return
+    numPr = pPr.find(qn("w:numPr"))
+    if numPr is not None:
+        pPr.remove(numPr)
+
+
+def apply_numpr(paragraph, numpr_template):
+    """Attach a copy of a previously-captured <w:numPr> to `paragraph`,
+    making it a bulleted list item with the same numbering definition as
+    the reference document's feature bullets."""
+    pPr = paragraph._p.get_or_add_pPr()
+    existing = pPr.find(qn("w:numPr"))
+    if existing is not None:
+        pPr.remove(existing)
+    pPr.append(copy.deepcopy(numpr_template))
+
+
+def set_cant_split(row):
+    """Set w:cantSplit on a table row so it moves to the next page as a
+    whole instead of being cut mid-content at the page break."""
+    trPr = row._tr.get_or_add_trPr()
+    trPr.append(trPr.makeelement(qn("w:cantSplit"), {}))
 
 
 def clone_paragraph_after(paragraph):
@@ -114,22 +147,86 @@ def edit_subject_and_intro(doc):
     )
 
 
+def copy_pPr(paragraph):
+    pPr = paragraph._p.find(qn("w:pPr"))
+    return copy.deepcopy(pPr) if pPr is not None else None
+
+
+def copy_rPr(run):
+    rPr = run._r.find(qn("w:rPr"))
+    return copy.deepcopy(rPr) if rPr is not None else None
+
+
+def apply_pPr(paragraph, pPr_template):
+    p = paragraph._p
+    existing = p.find(qn("w:pPr"))
+    if existing is not None:
+        p.remove(existing)
+    if pPr_template is not None:
+        p.insert(0, copy.deepcopy(pPr_template))
+
+
+def apply_rPr(run, rPr_template):
+    r = run._r
+    existing = r.find(qn("w:rPr"))
+    if existing is not None:
+        r.remove(existing)
+    if rPr_template is not None:
+        r.insert(0, copy.deepcopy(rPr_template))
+
+
+def remove_table_borders(table):
+    tblPr = table._tbl.tblPr
+    borders = tblPr.makeelement(qn("w:tblBorders"), {})
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        borders.append(borders.makeelement(qn(f"w:{edge}"), {qn("w:val"): "nil"}))
+    tblPr.append(borders)
+
+
 def edit_terms_and_conditions(doc):
-    # Paragraphs 48-56 are the 9 static "Label:\t\tText" lines. Collapse
-    # them into one docxtpl paragraph-loop line driven by
-    # company.terms_and_conditions, and delete the other 8 - the
-    # sub-bullet warranty-invalidity list (57-63) stays untouched/static.
+    # Paragraphs 48-56 are the 9 static "Label:\t\tText" lines, tab-aligned.
+    # A single tab only lines up the FIRST line of a wrapped value -
+    # continuation lines fall back to the paragraph's left margin (visible
+    # in the rendered output, e.g. "Shipment From:"). Replace the whole
+    # block with a real borderless 2-column table so every wrapped line
+    # stays indented under the value column - the sub-bullet
+    # warranty-invalidity list (57-63) stays untouched/static.
     p48 = doc.paragraphs[48]
+    pPr_template = copy_pPr(p48)
+    rPr_template = copy_rPr(p48.runs[0])
     for p in doc.paragraphs[49:57]:
         p._p.getparent().remove(p._p)
-    # {%p for %}/{%p endfor %} each collapse their OWN paragraph down to
-    # the bare tag (verified empirically), so for/content/endfor need to
-    # be three separate paragraphs, not one combined line.
-    set_paragraph_single_run_text(p48, "{%p for term in company.terms %}")
-    anchor = clone_paragraph_after(p48)
-    set_paragraph_single_run_text(anchor, "{{ term.0 }}:\t\t{{ term.1 }}")
-    anchor = clone_paragraph_after(anchor)
-    set_paragraph_single_run_text(anchor, "{%p endfor %}")
+
+    table = doc.add_table(rows=3, cols=2)
+    table.autofit = False
+    for row in table.rows:
+        row.cells[0].width = Mm(38)
+        row.cells[1].width = Mm(122)
+
+    def style_cell(cell, text):
+        paragraph = cell.paragraphs[0]
+        run = paragraph.add_run(text)
+        apply_pPr(paragraph, pPr_template)
+        apply_rPr(run, rPr_template)
+
+    # docxtpl's {%tr for %}/{%tr endfor %} tags each collapse their own
+    # ENTIRE row down to the bare tag (same mechanism as the product
+    # table), so the loop needs a dedicated for-row, this content row, and
+    # a dedicated endfor-row.
+    for_row, content_row, endfor_row = table.rows
+    style_cell(for_row.cells[0], "{%tr for term in company.terms %}")
+    style_cell(content_row.cells[0], "{{ term.0 }}:")
+    style_cell(content_row.cells[1], "{{ term.1 }}")
+    style_cell(endfor_row.cells[0], "{%tr endfor %}")
+    set_cant_split(content_row)
+    remove_table_borders(table)
+
+    # doc.add_table() appends at the end of the body - relocate the table
+    # to where the old tab-aligned paragraphs used to live, then drop p48.
+    tbl_element = table._tbl
+    tbl_element.getparent().remove(tbl_element)
+    p48._p.addprevious(tbl_element)
+    p48._p.getparent().remove(p48._p)
 
 
 def edit_product_table(doc):
@@ -162,7 +259,24 @@ def edit_product_table(doc):
     set_run_text(image_run, "{% if item.image %}{{ item.image }}{% endif %}")
     clear_other_runs(image_p, keep_index=0)
 
-    set_paragraph_single_run_text(desc_paragraphs[5], "Key Features :")
+    # Capture the pristine bullet numbering (numId) from the reference's
+    # first feature line before anything below touches it, so it can be
+    # reapplied explicitly to only the paragraphs that are real list items.
+    numpr_template = copy.deepcopy(desc_paragraphs[6]._p.find(qn("w:pPr")).find(qn("w:numPr")))
+
+    # "Key Features :" is only meaningful when there ARE features - make it
+    # a {%p if %} block (like the optional lines below) instead of a static
+    # heading, so an item with no features doesn't show a heading over
+    # nothing.
+    heading_p = desc_paragraphs[5]
+    set_paragraph_single_run_text(heading_p, "{%p if item.features %}")
+    strip_numpr(heading_p)
+    anchor = clone_paragraph_after(heading_p)
+    set_paragraph_single_run_text(anchor, "Key Features :")
+    strip_numpr(anchor)
+    anchor = clone_paragraph_after(anchor)
+    set_paragraph_single_run_text(anchor, "{%p endif %}")
+    strip_numpr(anchor)
 
     # paragraph 6 is the first feature line - reuse its styling for the
     # {%p for %} tag paragraph. {%p for %}/{%p endfor %} each collapse
@@ -173,34 +287,48 @@ def edit_product_table(doc):
     for p in desc_paragraphs[7:10]:
         p._p.getparent().remove(p._p)
     set_paragraph_single_run_text(desc_paragraphs[6], "{%p for f in item.features %}")
+    strip_numpr(desc_paragraphs[6])
     anchor = clone_paragraph_after(desc_paragraphs[6])
     set_paragraph_single_run_text(anchor, "{{ f }}")
+    apply_numpr(anchor, numpr_template)
     anchor = clone_paragraph_after(anchor)
     set_paragraph_single_run_text(anchor, "{%p endfor %}")
+    strip_numpr(anchor)
 
-    def append_line(text):
+    def append_line(text, bulleted=False):
         nonlocal anchor
         anchor = clone_paragraph_after(anchor)
         set_paragraph_single_run_text(anchor, text)
+        if bulleted:
+            apply_numpr(anchor, numpr_template)
+        else:
+            strip_numpr(anchor)
 
-    def append_loop(list_expr, item_name, endfor_label):
+    def append_conditional_line(condition_expr, content_expr):
+        # {%p if %}/{%p endif %} collapse their own paragraph AND the
+        # paragraph(s) between them when the condition is false (verified
+        # empirically) - so a blank/absent field disappears entirely
+        # instead of leaving an empty line or bullet behind.
+        append_line(f"{{%p if {condition_expr} %}}")
+        append_line(content_expr)
+        append_line("{%p endif %}")
+
+    def append_loop(list_expr, item_name):
         append_line(f"{{%p for {item_name} in {list_expr} %}}")
-        append_line(f"{{{{ {item_name} }}}}")
+        append_line(f"{{{{ {item_name} }}}}", bulleted=True)
         append_line("{%p endfor %}")
 
     # Optional extra product-detail lines, cloned from the feature-line
-    # paragraph's styling, appended after the features loop. Plain {{ }}
-    # expressions (no {%p %}/{%tr %} tag) are safe to combine in one
-    # paragraph, so the conditional single-line fields stay as one-liners;
-    # only the list fields need the three-paragraph loop structure.
-    append_line("{{ ('MRP: ' + item.mrp_formatted) if item.mrp_formatted else '' }}")
-    append_line("{{ ('Warranty: ' + item.warranty) if item.warranty else '' }}")
-    append_line("{{ 'Technical Specifications :' if item.specifications else '' }}")
-    append_loop("item.specifications", "s", "specifications")
-    append_line("{{ 'Accessories :' if item.accessories else '' }}")
-    append_loop("item.accessories", "a", "accessories")
-    append_line("{{ ('Installation Notes: ' + item.installation_notes) if item.installation_notes else '' }}")
-    append_line("{{ ('Additional Notes: ' + item.additional_notes) if item.additional_notes else '' }}")
+    # paragraph's styling (minus the bullet - only actual list items keep
+    # numPr), appended after the features loop.
+    append_conditional_line("item.mrp_formatted", "MRP: {{ item.mrp_formatted }}")
+    append_conditional_line("item.warranty", "Warranty: {{ item.warranty }}")
+    append_conditional_line("item.specifications", "Technical Specifications :")
+    append_loop("item.specifications", "s")
+    append_conditional_line("item.accessories", "Accessories :")
+    append_loop("item.accessories", "a")
+    append_conditional_line("item.installation_notes", "Installation Notes: {{ item.installation_notes }}")
+    append_conditional_line("item.additional_notes", "Additional Notes: {{ item.additional_notes }}")
 
     # --- RATE column ---
     rate_p = cells[2].paragraphs[0]
@@ -209,6 +337,11 @@ def edit_product_table(doc):
     # Delete the reference's second sample product row entirely - the
     # content row above now generates one row per real item.
     table.rows[2]._tr.getparent().remove(table.rows[2]._tr)
+
+    # A product's row can run to several lines (image + features + specs);
+    # without cantSplit, Word/LibreOffice happily break it mid-paragraph at
+    # a page boundary. Force the whole row to move to the next page instead.
+    set_cant_split(row)
 
     # Wrap the content row with dedicated for/endfor marker rows (cloned
     # from it, so column widths/grid stay consistent, then cleared).
