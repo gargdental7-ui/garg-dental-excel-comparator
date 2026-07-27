@@ -136,15 +136,18 @@ def edit_subject_and_intro(doc):
     set_run_text(p41.runs[0], "Subject: {{ proposal.subject }}")
     clear_other_runs(p41, keep_index=0)
 
-    # Intro paragraph 43: keep Garg Dental's boilerplate wording, append an
-    # optional customer-notes line to its last run rather than inserting a
-    # whole new paragraph (lower risk of corrupting the XML tree).
+    # Intro paragraph 43: keep Garg Dental's boilerplate wording as its own
+    # paragraph. Customer notes get their own conditional paragraph right
+    # after it (the {%p if%} pattern used throughout this file) instead of
+    # being appended inline to the same sentence - a long note read as a
+    # run-on continuation of the boilerplate text looked unprofessional.
     p43 = doc.paragraphs[43]
-    last_run = p43.runs[-1]
-    set_run_text(
-        last_run,
-        last_run.text + "{{ (' Notes: ' + customer.notes) if customer.notes else '' }}",
-    )
+    anchor = clone_paragraph_after(p43)
+    set_paragraph_single_run_text(anchor, "{%p if customer.notes %}")
+    anchor = clone_paragraph_after(anchor)
+    set_paragraph_single_run_text(anchor, "Notes: {{ customer.notes }}")
+    anchor = clone_paragraph_after(anchor)
+    set_paragraph_single_run_text(anchor, "{%p endif %}")
 
 
 def copy_pPr(paragraph):
@@ -184,17 +187,19 @@ def remove_table_borders(table):
 
 
 def edit_terms_and_conditions(doc):
-    # Paragraphs 48-56 are the 9 static "Label:\t\tText" lines, tab-aligned.
-    # A single tab only lines up the FIRST line of a wrapped value -
+    # Paragraphs 51-59 (originally 48-56 in the reference - shifted +3 by
+    # the conditional Notes paragraph edit_subject_and_intro inserts
+    # earlier) are the 9 static "Label:\t\tText" lines, tab-aligned. A
+    # single tab only lines up the FIRST line of a wrapped value -
     # continuation lines fall back to the paragraph's left margin (visible
     # in the rendered output, e.g. "Shipment From:"). Replace the whole
     # block with a real borderless 2-column table so every wrapped line
     # stays indented under the value column - the sub-bullet
-    # warranty-invalidity list (57-63) stays untouched/static.
-    p48 = doc.paragraphs[48]
+    # warranty-invalidity list (60-66) stays untouched/static.
+    p48 = doc.paragraphs[51]
     pPr_template = copy_pPr(p48)
     rPr_template = copy_rPr(p48.runs[0])
-    for p in doc.paragraphs[49:57]:
+    for p in doc.paragraphs[52:60]:
         p._p.getparent().remove(p._p)
 
     table = doc.add_table(rows=3, cols=2)
