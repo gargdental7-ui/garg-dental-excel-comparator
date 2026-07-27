@@ -247,9 +247,26 @@ def edit_product_table(doc):
     # --- DESCRIPTION column: rewrite each paragraph in place ---
     desc_paragraphs = cells[1].paragraphs
     set_paragraph_single_run_text(desc_paragraphs[0], "{{ item.product_name }}")
-    set_paragraph_single_run_text(desc_paragraphs[1], "MODEL : {{ item.model }}")
-    set_paragraph_single_run_text(desc_paragraphs[2], "BRAND: {{ item.brand }}")
-    set_paragraph_single_run_text(desc_paragraphs[3], "ORIGIN: {{ item.origin }}")
+
+    def make_optional_header_line(paragraph, condition_expr, label_expr):
+        # Model/Brand/Origin are all optional per-item fields (Excel import
+        # and the manual product form both allow leaving them blank). The
+        # reference template shows them as unconditional static lines, so a
+        # blank field used to render as a bare "MODEL :" with nothing after
+        # it - convert to the same {%p if %}/{%p endif %} pattern used for
+        # MRP/Warranty/etc below, so the whole line disappears instead.
+        set_paragraph_single_run_text(paragraph, f"{{%p if {condition_expr} %}}")
+        strip_numpr(paragraph)
+        anchor = clone_paragraph_after(paragraph)
+        set_paragraph_single_run_text(anchor, label_expr)
+        strip_numpr(anchor)
+        anchor = clone_paragraph_after(anchor)
+        set_paragraph_single_run_text(anchor, "{%p endif %}")
+        strip_numpr(anchor)
+
+    make_optional_header_line(desc_paragraphs[1], "item.model", "MODEL : {{ item.model }}")
+    make_optional_header_line(desc_paragraphs[2], "item.brand", "BRAND: {{ item.brand }}")
+    make_optional_header_line(desc_paragraphs[3], "item.origin", "ORIGIN: {{ item.origin }}")
 
     # paragraph 4 held the reference's static product image - strip the
     # drawing and replace with the per-item conditional image tag.

@@ -113,6 +113,7 @@ export default function ComparatorPage() {
               setCurrentHeaders([]);
               setOmsHeaders([]);
               setMappings([]);
+              setError(null);
             }}
           />
           <FileDropInput
@@ -128,6 +129,7 @@ export default function ComparatorPage() {
               setCurrentHeaders([]);
               setOmsHeaders([]);
               setMappings([]);
+              setError(null);
             }}
           />
 

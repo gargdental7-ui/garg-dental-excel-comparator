@@ -8,7 +8,7 @@ import hmac
 import os
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 COOKIE_NAME = "gd_session"
