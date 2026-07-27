@@ -27,7 +27,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 print:hidden">
       <Link href="/" className="flex items-center gap-2 px-5 py-5">
-        <Image src="/brand/garg-dental-mark.png" alt="Garg Dental" width={28} height={28} priority className="h-7 w-7" />
+        <Image src="/brand/garg-dental-mark.png" alt="Garg Dental" width={28} height={28} priority unoptimized className="h-7 w-7" />
         <div className="leading-tight">
           <p className="text-sm font-bold text-slate-900 dark:text-slate-50">Garg Dental</p>
           <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Operations Toolkit</p>

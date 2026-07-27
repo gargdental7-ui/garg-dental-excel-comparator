@@ -49,6 +49,7 @@ function LoginForm() {
           width={140}
           height={103}
           priority
+          unoptimized
           className="mx-auto mb-4 h-20 w-auto"
         />
         <h1 className="text-center text-lg font-bold text-slate-900 dark:text-slate-50">Garg Dental</h1>
