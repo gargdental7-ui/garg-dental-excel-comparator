@@ -15,8 +15,21 @@ import type { AuditLogEntry } from "@/lib/types";
 const ACTION_LABELS: Record<string, string> = {
   login: "Logged In",
   create_quotation: "Created Quote",
+  download_quotation: "Downloaded Quote",
   upload_master_excel: "Uploaded Master Excel",
   delete_master_excel: "Deleted Master Excel",
+  upload_template: "Uploaded Quotation Template",
+  delete_template: "Deleted Quotation Template",
+  upload_logo: "Uploaded Company Logo",
+  delete_logo: "Deleted Company Logo",
+  create_signature: "Added Signature",
+  update_signature: "Updated Signature",
+  delete_signature: "Deleted Signature",
+  create_company: "Created Company",
+  update_company: "Updated Company",
+  enable_company: "Enabled Company",
+  disable_company: "Disabled Company",
+  delete_company: "Deleted Company",
   create_user: "Created User",
   update_user: "Updated User",
   enable_user: "Enabled User",
@@ -25,13 +38,30 @@ const ACTION_LABELS: Record<string, string> = {
   reset_password: "Reset Password",
 };
 
+const FILENAME_METADATA_ACTIONS = new Set([
+  "upload_master_excel",
+  "delete_master_excel",
+  "upload_template",
+  "delete_template",
+  "upload_logo",
+]);
+
 function describe(entry: AuditLogEntry): string {
   const label = ACTION_LABELS[entry.action] ?? entry.action;
   const meta = entry.metadata;
   if (entry.action === "create_quotation" && meta) {
     return `${label} #${meta.quote_number} - ${meta.customer_name}`;
   }
-  if ((entry.action === "upload_master_excel" || entry.action === "delete_master_excel") && meta?.filename) {
+  if (entry.action === "download_quotation" && meta?.format) {
+    return `${label} (${String(meta.format).toUpperCase()})`;
+  }
+  if ((entry.action === "create_signature" || entry.action === "delete_signature") && meta?.name) {
+    return `${label} (${meta.name})`;
+  }
+  if ((entry.action === "create_company" || entry.action === "update_company" || entry.action === "delete_company") && meta?.slug) {
+    return `${label} (${meta.slug})`;
+  }
+  if (FILENAME_METADATA_ACTIONS.has(entry.action) && meta?.filename) {
     return `${label} (${meta.filename})`;
   }
   return label;

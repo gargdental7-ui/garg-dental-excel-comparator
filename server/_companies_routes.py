@@ -119,6 +119,89 @@ def update_company(
     return _company_out(row)
 
 
+@router.get("/{company_id}/dashboard")
+@handle_app_errors
+def company_dashboard(company_id: str, current_user: CurrentUser = Depends(require_super_admin)):
+    with get_connection(company_id=company_id, user_id=current_user.id, role=current_user.role) as conn:
+        with conn.cursor() as cur:
+            cur.execute("select 1 from companies where id = %s", (company_id,))
+            if cur.fetchone() is None:
+                raise HTTPException(status_code=404, detail={"message": "Company not found."})
+
+            cur.execute(
+                "select "
+                "count(*) filter (where created_at >= date_trunc('day', now())) as today, "
+                "count(*) filter (where created_at >= date_trunc('month', now())) as this_month, "
+                "count(distinct customer_name) as customers "
+                "from quotations where company_id = %s",
+                (company_id,),
+            )
+            totals = cur.fetchone()
+
+            cur.execute(
+                "select u.full_name, count(*) as n from quotations q join users u on u.id = q.created_by "
+                "where q.company_id = %s group by u.full_name order by n desc limit 1",
+                (company_id,),
+            )
+            most_active = cur.fetchone()
+
+            cur.execute(
+                "select quote_number, customer_name, created_at from quotations "
+                "where company_id = %s order by created_at desc limit 1",
+                (company_id,),
+            )
+            last_quotation = cur.fetchone()
+
+            cur.execute("select version, file_size from master_excel where company_id = %s", (company_id,))
+            master_excel = cur.fetchone()
+
+            cur.execute("select version, file_size from quotation_templates where company_id = %s", (company_id,))
+            template = cur.fetchone()
+
+            cur.execute("select count(*) as n from signatures where company_id = %s and active", (company_id,))
+            active_signatures = cur.fetchone()["n"]
+
+            cur.execute(
+                "select coalesce(sum(qf.size_bytes), 0) as total from quotation_files qf "
+                "join quotations q on q.id = qf.quotation_id where q.company_id = %s",
+                (company_id,),
+            )
+            quotation_files_bytes = cur.fetchone()["total"]
+
+    # "Rough" by design (see the plan): the company logo's file size isn't
+    # persisted anywhere (only its storage path), so it's left out of this
+    # total rather than adding a Storage round-trip just for an estimate.
+    storage_bytes = (
+        quotation_files_bytes
+        + (master_excel["file_size"] if master_excel else 0)
+        + (template["file_size"] if template else 0)
+    )
+
+    return {
+        "quotationsToday": totals["today"],
+        "quotationsThisMonth": totals["this_month"],
+        # Proxy for "customers": there's no dedicated customer/CRM entity in
+        # this schema, so this counts distinct customer_name values instead -
+        # two quotations for the same customer typed slightly differently
+        # would count as two, a known simplification.
+        "totalCustomers": totals["customers"],
+        "mostActiveStaff": most_active["full_name"] if most_active else None,
+        "lastQuotation": (
+            {
+                "quoteNumber": last_quotation["quote_number"],
+                "customerName": last_quotation["customer_name"],
+                "createdAt": last_quotation["created_at"].isoformat(),
+            }
+            if last_quotation
+            else None
+        ),
+        "masterExcelVersion": master_excel["version"] if master_excel else None,
+        "templateVersion": template["version"] if template else None,
+        "activeSignatureCount": active_signatures,
+        "storageBytes": storage_bytes,
+    }
+
+
 @router.delete("/{company_id}")
 @handle_app_errors
 def delete_company(company_id: str, request: Request, current_user: CurrentUser = Depends(require_super_admin)):

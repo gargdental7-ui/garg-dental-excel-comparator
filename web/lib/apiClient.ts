@@ -7,6 +7,7 @@ import {
   type CollectionInspectResponse,
   type ColumnMappingPair,
   type Company,
+  type CompanyDashboard,
   type CompanyLogoMetadata,
   type ComparatorAnalyzeResult,
   type ComparatorInspectResponse,
@@ -296,6 +297,7 @@ export const api = {
     update: (companyId: string, payload: UpdateCompanyRequest) =>
       jsonRequest<Company>("PATCH", `/api/companies/${companyId}`, payload),
     remove: (companyId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/companies/${companyId}`),
+    dashboard: (companyId: string) => jsonRequest<CompanyDashboard>("GET", `/api/companies/${companyId}/dashboard`),
   },
   signatures: {
     list: (companyId?: string) => {

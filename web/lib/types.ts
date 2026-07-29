@@ -385,6 +385,18 @@ export interface UpdateCompanyRequest {
   active?: boolean;
 }
 
+export interface CompanyDashboard {
+  quotationsToday: number;
+  quotationsThisMonth: number;
+  totalCustomers: number;
+  mostActiveStaff: string | null;
+  lastQuotation: { quoteNumber: number; customerName: string; createdAt: string } | null;
+  masterExcelVersion: number | null;
+  templateVersion: number | null;
+  activeSignatureCount: number;
+  storageBytes: number;
+}
+
 // ------------------------------------------------------------------- Users
 export interface ManagedUser {
   id: string;

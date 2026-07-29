@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Building2 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ErrorBanner } from "@/components/ErrorBanner";
@@ -122,7 +123,14 @@ export default function CompaniesPage() {
   }
 
   const columns: TableColumn<Company>[] = [
-    { header: "Name", render: (c) => c.displayName },
+    {
+      header: "Name",
+      render: (c) => (
+        <Link href={`/companies/${c.id}/dashboard`} className="font-medium text-brand-navy hover:underline dark:text-brand-cyan">
+          {c.displayName}
+        </Link>
+      ),
+    },
     { header: "Slug", render: (c) => c.slug },
     {
       header: "Status",
