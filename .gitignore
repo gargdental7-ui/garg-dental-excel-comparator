@@ -21,3 +21,4 @@ server/.env.*
 web/.env.local
 .env
 .env.local
+.vercel

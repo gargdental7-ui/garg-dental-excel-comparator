@@ -14,6 +14,7 @@ from _company_assets_routes import router as company_assets_router
 from _master_excel_routes import router as master_excel_router
 from _quotation_history_routes import router as quotation_history_router
 from _quotation_routes import router as quotation_router
+from _signatures_routes import router as signatures_router
 from _users_routes import router as users_router
 
 app = FastAPI(title="Garg Dental Operations Toolkit API")
@@ -29,6 +30,7 @@ app.include_router(master_excel_router)
 app.include_router(audit_router)
 app.include_router(companies_router)
 app.include_router(company_assets_router)
+app.include_router(signatures_router)
 
 
 @app.get("/api/ping")

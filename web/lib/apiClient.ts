@@ -24,6 +24,7 @@ import {
   type QuotationProductsImportResponse,
   type QuotationProductsInspectResponse,
   type QuotationTemplateMetadata,
+  type SignatureSummary,
   type StaffSummaryEntry,
   type UpdateCompanyRequest,
   type UpdateUserRequest,
@@ -295,6 +296,27 @@ export const api = {
     update: (companyId: string, payload: UpdateCompanyRequest) =>
       jsonRequest<Company>("PATCH", `/api/companies/${companyId}`, payload),
     remove: (companyId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/companies/${companyId}`),
+  },
+  signatures: {
+    list: (companyId?: string) => {
+      const qs = companyId ? `?company_id=${encodeURIComponent(companyId)}` : "";
+      return jsonRequest<{ signatures: SignatureSummary[] }>("GET", `/api/signatures${qs}`);
+    },
+    create: async (file: File, companyId: string, name: string, designation: string): Promise<SignatureSummary> => {
+      const form = new FormData();
+      form.append("file", file);
+      const params = new URLSearchParams({ company_id: companyId, name, designation });
+      const res = await fetch(`/api/signatures?${params.toString()}`, { method: "PUT", body: form });
+      if (!res.ok) throw new ApiError(res.status, await readErrorDetail(res));
+      return res.json() as Promise<SignatureSummary>;
+    },
+    update: (
+      signatureId: string,
+      companyId: string,
+      payload: { name?: string; designation?: string; active?: boolean },
+    ) => jsonRequest<SignatureSummary>("PATCH", `/api/signatures/${signatureId}`, { company_id: companyId, ...payload }),
+    remove: (signatureId: string, companyId: string) =>
+      jsonRequest<{ ok: true }>("DELETE", `/api/signatures/${signatureId}?company_id=${encodeURIComponent(companyId)}`),
   },
   users: {
     list: (companyId: string) => jsonRequest<{ users: ManagedUser[] }>("GET", `/api/users?company_id=${encodeURIComponent(companyId)}`),

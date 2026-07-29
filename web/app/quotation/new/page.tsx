@@ -1,9 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { api, downloadBlob } from "@/lib/apiClient";
-import { ApiError, type QuotationCustomer, type QuotationImportedProduct, type QuotationItem, type QuotationProposal } from "@/lib/types";
+import {
+  ApiError,
+  type QuotationCustomer,
+  type QuotationImportedProduct,
+  type QuotationItem,
+  type QuotationProposal,
+  type SignatureSummary,
+} from "@/lib/types";
 import { blankQuotationItem, defaultQuotationProposal, emptyQuotationCustomer, quotationItemFromImportedProduct } from "@/lib/quotationDefaults";
 import { computeTotals } from "@/lib/quotationTotals";
 import { findDuplicateProducts } from "@/lib/quotationValidation";
@@ -19,8 +27,6 @@ import { QuotationHelp } from "@/components/quotation/QuotationHelp";
 import { QuotationPreview } from "@/components/quotation/QuotationPreview";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Button } from "@/components/Button";
-
-const COMPANY_ID = "garg_dental";
 
 // Nothing here is ever sent anywhere until "Generate DOCX" - this is purely
 // a local, in-browser draft so a refresh (or an accidental tab close)
@@ -70,7 +76,10 @@ function itemsReducer(state: QuotationItem[], action: ItemsAction): QuotationIte
   }
 }
 
-export default function GargDentalNewQuotePage() {
+function NewQuotePage() {
+  const searchParams = useSearchParams();
+  const companyId = searchParams.get("company_id");
+
   const [customer, setCustomer] = useState<QuotationCustomer>(emptyQuotationCustomer());
   const [proposal, setProposal] = useState<QuotationProposal>(defaultQuotationProposal());
   const [mode, setMode] = useState<QuotationMode | null>(null);
@@ -83,11 +92,31 @@ export default function GargDentalNewQuotePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formImagePathHint, setFormImagePathHint] = useState("");
 
+  const [signatures, setSignatures] = useState<SignatureSummary[]>([]);
+  const [signatureId, setSignatureId] = useState<string>("");
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
   const duplicateProducts = useMemo(() => findDuplicateProducts(items), [items]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    api.signatures
+      .list(companyId)
+      .then((res) => {
+        if (!cancelled) setSignatures(res.signatures);
+      })
+      .catch(() => {
+        // Non-fatal - the signature picker is optional, quotations can
+        // still be generated without one.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   // Restore a draft left over from before a refresh/close. Done in an
   // effect (not a useState lazy initializer) so server and first-client
@@ -188,6 +217,10 @@ export default function GargDentalNewQuotePage() {
 
   async function handleGenerate() {
     setError(null);
+    if (!companyId) {
+      setError("No company selected. Go back and pick a company first.");
+      return;
+    }
     if (!customer.customer_name.trim()) {
       setError("Please enter a Customer Name before generating the quotation.");
       return;
@@ -203,10 +236,11 @@ export default function GargDentalNewQuotePage() {
     setBusy(true);
     try {
       const { blob, filename } = await api.quotation.generate({
-        company_id: COMPANY_ID,
+        company_id: companyId,
         customer,
         proposal,
         items: items.map((item) => stripClientId(item)),
+        signature_id: signatureId || undefined,
       });
       downloadBlob(blob, filename);
       // The quotation is done and downloaded - a refresh from here on
@@ -226,15 +260,12 @@ export default function GargDentalNewQuotePage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 print:max-w-none print:px-0 print:py-0">
       <div className="print:hidden">
-        <Link
-          href="/quotation/garg-dental"
-          className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-        >
-          &larr; Garg Dental Dashboard
+        <Link href="/quotation" className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+          &larr; Quotation Dashboard
         </Link>
         <h1 className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-50">Smart Quotation Generator</h1>
         <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
-          Build a professional Garg Dental proposal in minutes - upload a product Excel, or add products manually.
+          Build a professional proposal in minutes - upload a product Excel, or add products manually.
         </p>
       </div>
 
@@ -308,6 +339,29 @@ export default function GargDentalNewQuotePage() {
           {items.length > 0 && (
             <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
               <p className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Review &amp; Generate</p>
+
+              {signatures.length > 0 && (
+                <div className="mb-3">
+                  <label htmlFor="signature" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Signature (optional)
+                  </label>
+                  <select
+                    id="signature"
+                    value={signatureId}
+                    onChange={(e) => setSignatureId(e.target.value)}
+                    className="w-full max-w-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  >
+                    <option value="">No signature</option>
+                    {signatures.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.designation ? ` - ${s.designation}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-3">
                 <Button onClick={handleGenerate} disabled={busy || duplicateProducts.length > 0}>
                   {busy ? "Generating..." : "Generate DOCX"}
@@ -336,5 +390,13 @@ export default function GargDentalNewQuotePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function NewQuotePageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <NewQuotePage />
+    </Suspense>
   );
 }

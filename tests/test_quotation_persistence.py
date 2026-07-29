@@ -185,6 +185,46 @@ def test_generate_still_returns_docx_when_persistence_entirely_fails(client, mon
     assert len(res.content) > 0
 
 
+def test_generate_passes_resolved_signature_to_render(client, monkeypatch, fake_db_state):
+    _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
+    monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
+
+    captured = {}
+
+    def fake_fetch_signature(current_user, company_id, signature_id):
+        captured["company_id"] = company_id
+        captured["signature_id"] = signature_id
+        return {"image_bytes": None, "name": "Dr. Signer", "designation": "Director"}
+
+    monkeypatch.setattr(_quotation_routes, "fetch_signature_for_render", fake_fetch_signature)
+
+    payload = dict(VALID_PAYLOAD, signature_id="sig-1")
+    res = client.post("/api/quotation/generate", json=payload)
+    assert res.status_code == 200
+    assert captured == {"company_id": "company-1", "signature_id": "sig-1"}
+
+
+def test_generate_without_signature_id_never_calls_signature_lookup(client, monkeypatch, fake_db_state):
+    _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
+    monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("fetch_signature_for_render should not be called without a signature_id")
+
+    monkeypatch.setattr(_quotation_routes, "fetch_signature_for_render", fail_if_called)
+
+    res = client.post("/api/quotation/generate", json=VALID_PAYLOAD)
+    assert res.status_code == 200
+
+
 def test_history_query_scopes_to_own_quotations_for_staff(monkeypatch):
     state = {"executed": [], "counter": 0}
     monkeypatch.setattr(_quotation_history_routes, "get_connection", lambda **kwargs: _RecordingConnection(state))

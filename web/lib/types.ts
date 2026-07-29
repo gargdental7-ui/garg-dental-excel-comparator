@@ -328,6 +328,15 @@ export interface GenerateQuotationRequest {
   customer: QuotationCustomer;
   proposal: QuotationProposal;
   items: Omit<QuotationItem, "id">[];
+  signature_id?: string;
+}
+
+export interface SignatureSummary {
+  id: string;
+  name: string;
+  designation: string;
+  active: boolean;
+  createdAt: string;
 }
 
 // -------------------------------------------------------------------- Auth

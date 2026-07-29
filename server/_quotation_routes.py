@@ -27,6 +27,7 @@ from _master_excel_routes import fetch_master_excel_bytes
 from _mapping_heuristics import PRODUCT_CANDIDATES, suggest_mapping
 from _pdf_conversion import convert_docx_to_pdf
 from _serialization import mapping_kwargs
+from _signatures_routes import fetch_signature_for_render
 from _storage import upload as storage_upload
 from _tempfiles import temp_download_path, temp_upload_path
 from _tenancy import resolve_company_scope
@@ -210,6 +211,10 @@ class GenerateQuotationRequest(BaseModel):
     customer: QuotationCustomerIn
     proposal: QuotationProposalIn
     items: List[QuotationItemIn]
+    # Optional - not every quotation has a signatory selected. Silently
+    # ignored (not an error) if it doesn't resolve to an active signature
+    # in the caller's own company - see fetch_signature_for_render.
+    signature_id: Optional[str] = None
 
 
 def _persist_quotation(
@@ -301,8 +306,9 @@ def generate(payload: GenerateQuotationRequest, request: Request, current_user: 
     if template_bytes is None:
         raise NoQuotationTemplateError(company.display_name)
     logo_bytes = fetch_company_logo_bytes(current_user, scope)
+    signature = fetch_signature_for_render(current_user, scope, payload.signature_id) if payload.signature_id else None
 
-    content = render_quotation_docx(company, customer, proposal, items, totals, template_bytes, logo_bytes)
+    content = render_quotation_docx(company, customer, proposal, items, totals, template_bytes, logo_bytes, signature)
     filename = default_output_filename(company, customer, proposal)
 
     _persist_quotation(current_user, scope, customer, content, request)
