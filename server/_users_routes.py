@@ -5,9 +5,10 @@ takes require_admin as a parameter dependency (not just a router-level
 CurrentUser - to scope queries by company_id and to self-protect against
 an admin disabling/demoting/deleting their own account."""
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from _audit import log_action
 from _auth import CurrentUser, require_admin
 from _db import get_connection
 from _errors import handle_app_errors
@@ -53,7 +54,7 @@ class CreateUserRequest(BaseModel):
 
 @router.post("")
 @handle_app_errors
-def create_user(payload: CreateUserRequest, current_user: CurrentUser = Depends(require_admin)):
+def create_user(payload: CreateUserRequest, request: Request, current_user: CurrentUser = Depends(require_admin)):
     with get_connection(company_id=current_user.company_id, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute("select 1 from users where company_id = %s and username = %s", (current_user.company_id, payload.username))
@@ -66,6 +67,7 @@ def create_user(payload: CreateUserRequest, current_user: CurrentUser = Depends(
                 (current_user.company_id, payload.full_name, payload.username, _hash_password(payload.password), payload.role),
             )
             row = cur.fetchone()
+    log_action(current_user, "create_user", "user", str(row["id"]), request, {"username": row["username"], "role": row["role"]})
     return _user_out(row)
 
 
@@ -77,7 +79,7 @@ class UpdateUserRequest(BaseModel):
 
 @router.patch("/{user_id}")
 @handle_app_errors
-def update_user(user_id: str, payload: UpdateUserRequest, current_user: CurrentUser = Depends(require_admin)):
+def update_user(user_id: str, payload: UpdateUserRequest, request: Request, current_user: CurrentUser = Depends(require_admin)):
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail={"message": "Nothing to update."})
@@ -100,6 +102,14 @@ def update_user(user_id: str, payload: UpdateUserRequest, current_user: CurrentU
             row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": "User not found."})
+    # "disable_user"/"enable_user" specifically when that's what changed
+    # (matches the spec's activity-log examples more precisely than a
+    # generic "update_user" would), otherwise a generic edit.
+    if "active" in updates:
+        action = "enable_user" if updates["active"] else "disable_user"
+    else:
+        action = "update_user"
+    log_action(current_user, action, "user", str(row["id"]), request, updates)
     return _user_out(row)
 
 
@@ -109,28 +119,32 @@ class ResetPasswordRequest(BaseModel):
 
 @router.post("/{user_id}/reset-password")
 @handle_app_errors
-def reset_password(user_id: str, payload: ResetPasswordRequest, current_user: CurrentUser = Depends(require_admin)):
+def reset_password(user_id: str, payload: ResetPasswordRequest, request: Request, current_user: CurrentUser = Depends(require_admin)):
     with get_connection(company_id=current_user.company_id, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "update users set password_hash = %s where company_id = %s and id = %s returning id",
+                "update users set password_hash = %s where company_id = %s and id = %s returning id, username",
                 (_hash_password(payload.new_password), current_user.company_id, user_id),
             )
             row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": "User not found."})
+    log_action(current_user, "reset_password", "user", str(row["id"]), request, {"username": row["username"]})
     return {"ok": True}
 
 
 @router.delete("/{user_id}")
 @handle_app_errors
-def delete_user(user_id: str, current_user: CurrentUser = Depends(require_admin)):
+def delete_user(user_id: str, request: Request, current_user: CurrentUser = Depends(require_admin)):
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail={"message": "You can't delete your own account."})
     with get_connection(company_id=current_user.company_id, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
-            cur.execute("delete from users where company_id = %s and id = %s returning id", (current_user.company_id, user_id))
+            cur.execute(
+                "delete from users where company_id = %s and id = %s returning id, username", (current_user.company_id, user_id)
+            )
             row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": "User not found."})
+    log_action(current_user, "delete_user", "user", str(row["id"]), request, {"username": row["username"]})
     return {"ok": True}

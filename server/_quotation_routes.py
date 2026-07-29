@@ -13,10 +13,11 @@ from app.exceptions import GenericHeaderDetectionError, InvalidHeaderRowError, M
 from app.quotation import ProductColumnMapping, QuotationCustomer, QuotationItem, QuotationProposal
 from app.quotation_companies import get_company
 from app.quotation_docx import default_output_filename, render_quotation_docx
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from _audit import log_action
 from _auth import CurrentUser, require_auth
 from _db import get_connection
 from _errors import handle_app_errors
@@ -202,7 +203,7 @@ class GenerateQuotationRequest(BaseModel):
     items: List[QuotationItemIn]
 
 
-def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, docx_bytes: bytes) -> None:
+def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, docx_bytes: bytes, request: Request) -> None:
     """Best-effort save of the just-rendered quotation (DOCX always, PDF
     when conversion succeeds) to Storage + DB. Deliberately never raises -
     "existing functionality must keep working exactly as today" means a
@@ -265,13 +266,17 @@ def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, d
                         "insert into quotation_files (quotation_id, kind, storage_path, size_bytes) values (%s, 'pdf', %s, %s)",
                         (quotation_id, pdf_path, len(pdf_bytes)),
                     )
+        log_action(
+            current_user, "create_quotation", "quotation", str(quotation_id), request,
+            {"quote_number": quote_number, "customer_name": customer.customer_name},
+        )
     except Exception:
         logger.exception("Failed to persist quotation; the DOCX response to the user is unaffected")
 
 
 @router.post("/generate")
 @handle_app_errors
-def generate(payload: GenerateQuotationRequest, current_user: CurrentUser = Depends(require_auth)):
+def generate(payload: GenerateQuotationRequest, request: Request, current_user: CurrentUser = Depends(require_auth)):
     company = get_company(payload.company_id)
     customer = QuotationCustomer(**payload.customer.model_dump())
     proposal = QuotationProposal(**payload.proposal.model_dump())
@@ -282,7 +287,7 @@ def generate(payload: GenerateQuotationRequest, current_user: CurrentUser = Depe
     content = render_quotation_docx(company, customer, proposal, items, totals)
     filename = default_output_filename(customer, proposal)
 
-    _persist_quotation(current_user, customer, content)
+    _persist_quotation(current_user, customer, content, request)
 
     return Response(
         content=content,

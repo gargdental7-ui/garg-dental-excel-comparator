@@ -151,13 +151,17 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/login")
-def login(payload: LoginRequest, response: Response):
+def login(payload: LoginRequest, request: Request, response: Response):
     row = _load_user_for_login(payload.username)
     generic_error = HTTPException(status_code=401, detail={"message": "Incorrect username or password."})
     if row is None or not row["active"]:
         raise generic_error
     if not bcrypt.checkpw(payload.password.encode(), row["password_hash"].encode()):
         raise generic_error
+
+    from _audit import log_action  # local import: see _audit.py's note on the _auth<->_audit cycle
+
+    log_action(_row_to_user(row), "login", "user", str(row["id"]), request)
 
     response.set_cookie(
         key=COOKIE_NAME,

@@ -400,3 +400,32 @@ export interface QuotationHistoryFilters {
   dateTo?: string;
   page?: number;
 }
+
+// ------------------------------------------------------------- Audit / Activity
+export interface StaffSummaryEntry {
+  id: string;
+  fullName: string;
+  role: "admin" | "staff";
+  active: boolean;
+  quotesToday: number;
+  lastActive: string | null;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  user: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AuditLogResponse {
+  logs: AuditLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

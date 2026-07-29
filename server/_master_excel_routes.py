@@ -5,9 +5,10 @@ schema, so "replace" is just re-running the same upload (an upsert), not a
 separate endpoint - matching the spec's "only one active master Excel per
 company" rule at the DB level, not just in application logic."""
 from app.exceptions import NoMasterExcelError
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
+from _audit import log_action
 from _auth import CurrentUser, require_admin, require_auth
 from _db import get_connection
 from _errors import handle_app_errors
@@ -67,7 +68,7 @@ def get_metadata(current_user: CurrentUser = Depends(require_auth)):
 
 @router.put("")
 @handle_app_errors
-def upload_master_excel(file: UploadFile = File(...), current_user: CurrentUser = Depends(require_admin)):
+def upload_master_excel(request: Request, file: UploadFile = File(...), current_user: CurrentUser = Depends(require_admin)):
     with temp_upload_path(file) as path:
         open_workbook(path)  # validates it's a real, openable workbook - reuses existing error handling
         content = path.read_bytes()
@@ -86,19 +87,27 @@ def upload_master_excel(file: UploadFile = File(...), current_user: CurrentUser 
                 "uploaded_by = excluded.uploaded_by, file_size = excluded.file_size, uploaded_at = now()",
                 (current_user.company_id, storage_path, filename, current_user.id, len(content)),
             )
+    log_action(current_user, "upload_master_excel", "master_excel", current_user.company_id, request, {"filename": filename})
     return get_metadata(current_user)
 
 
 @router.delete("")
 @handle_app_errors
-def delete_master_excel(current_user: CurrentUser = Depends(require_admin)):
+def delete_master_excel(request: Request, current_user: CurrentUser = Depends(require_admin)):
     with get_connection(company_id=current_user.company_id, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
-            cur.execute("delete from master_excel where company_id = %s returning storage_path", (current_user.company_id,))
+            cur.execute(
+                "delete from master_excel where company_id = %s returning storage_path, original_filename",
+                (current_user.company_id,),
+            )
             row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": "No master Excel exists."})
     storage_delete(BUCKET, row["storage_path"])
+    log_action(
+        current_user, "delete_master_excel", "master_excel", current_user.company_id, request,
+        {"filename": row["original_filename"]},
+    )
     return {"ok": True}
 
 

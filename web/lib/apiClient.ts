@@ -1,6 +1,7 @@
 import {
   ApiError,
   type ApiErrorDetail,
+  type AuditLogResponse,
   type AuthStatusResponse,
   type CollectionAnalyzeResponse,
   type CollectionInspectResponse,
@@ -19,6 +20,7 @@ import {
   type QuotationHistoryResponse,
   type QuotationProductsImportResponse,
   type QuotationProductsInspectResponse,
+  type StaffSummaryEntry,
   type UpdateUserRequest,
 } from "./types";
 
@@ -229,6 +231,14 @@ export const api = {
     },
     downloadDocxUrl: (id: string) => `/api/quotation/history/${id}/download/docx`,
     downloadPdfUrl: (id: string) => `/api/quotation/history/${id}/download/pdf`,
+  },
+  audit: {
+    staffSummary: () => jsonRequest<{ staff: StaffSummaryEntry[] }>("GET", "/api/audit/staff-summary"),
+    logs: (page: number = 1, staffId?: string) => {
+      const params = new URLSearchParams({ page: String(page) });
+      if (staffId) params.set("staff_id", staffId);
+      return jsonRequest<AuditLogResponse>("GET", `/api/audit/logs?${params.toString()}`);
+    },
   },
   auth: {
     login: (username: string, password: string) => jsonRequest<{ ok: true }>("POST", "/api/auth/login", { username, password }),
