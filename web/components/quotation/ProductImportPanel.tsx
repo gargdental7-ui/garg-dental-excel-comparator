@@ -64,11 +64,19 @@ export function ProductImportPanel({
     setImported(false);
   }
 
-  async function loadFile(nextFile: File | null, nextSheet?: string, nextHeaderRow?: number) {
+  async function loadFile(nextFile: File | null, nextSheet?: string, nextHeaderRow?: number, sourceOverride?: ExcelSource) {
+    // sourceOverride exists because selectSource() calls setExcelSource()
+    // and loadFile() in the same synchronous block - React state updates
+    // aren't visible until the next render, so reading the `excelSource`
+    // closure here would still see the *previous* value (e.g. still
+    // "upload" right after switching to "company_master"), sending the
+    // wrong excel_source to the backend and triggering "Please choose an
+    // Excel file to upload" even though Company Master was selected.
+    const source = sourceOverride ?? excelSource;
     setBusy(true);
     setError(null);
     try {
-      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet, nextHeaderRow, excelSource);
+      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet, nextHeaderRow, source);
       setSheetNames(inspection.sheet_names);
       setSheet(inspection.selected_sheet);
       setPreviewRows(inspection.preview_rows);
@@ -124,7 +132,7 @@ export function ProductImportPanel({
     setFile(null);
     resetFileState();
     setError(null);
-    if (source === "company_master") loadFile(null);
+    if (source === "company_master") loadFile(null, undefined, undefined, source);
   }
 
   return (
