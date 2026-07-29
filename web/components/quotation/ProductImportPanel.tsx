@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/apiClient";
-import { ApiError, type ExcelPreviewRow, type ProductColumnMapping, type QuotationImportedProduct } from "@/lib/types";
+import {
+  ApiError,
+  type ExcelPreviewRow,
+  type ExcelSource,
+  type MasterExcelMetadata,
+  type ProductColumnMapping,
+  type QuotationImportedProduct,
+} from "@/lib/types";
 import { FileDropInput } from "@/components/FileDropInput";
 import { ColumnMappingField } from "@/components/ColumnMappingField";
 import { ErrorBanner } from "@/components/ErrorBanner";
@@ -28,6 +35,8 @@ export function ProductImportPanel({
 }: {
   onImported: (products: QuotationImportedProduct[], fileName: string) => void;
 }) {
+  const [excelSource, setExcelSource] = useState<ExcelSource>("upload");
+  const [masterMeta, setMasterMeta] = useState<MasterExcelMetadata | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [sheet, setSheet] = useState<string>("");
@@ -40,6 +49,10 @@ export function ProductImportPanel({
   const [error, setError] = useState<string | null>(null);
   const [imported, setImported] = useState(false);
 
+  useEffect(() => {
+    api.masterExcel.getMetadata().then(setMasterMeta).catch(() => setMasterMeta({ exists: false }));
+  }, []);
+
   function resetFileState() {
     setSheetNames([]);
     setSheet("");
@@ -51,11 +64,11 @@ export function ProductImportPanel({
     setImported(false);
   }
 
-  async function loadFile(nextFile: File, nextSheet?: string, nextHeaderRow?: number) {
+  async function loadFile(nextFile: File | null, nextSheet?: string, nextHeaderRow?: number) {
     setBusy(true);
     setError(null);
     try {
-      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet, nextHeaderRow);
+      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet, nextHeaderRow, excelSource);
       setSheetNames(inspection.sheet_names);
       setSheet(inspection.selected_sheet);
       setPreviewRows(inspection.preview_rows);
@@ -77,22 +90,25 @@ export function ProductImportPanel({
 
   // Header row changes (clicking a preview row, typing a row number, or
   // "Use detected row") never require re-uploading the file - the browser
-  // still holds it in `file`, so this just re-POSTs it with the new
-  // header_row and the preview/mapping refresh from the response.
+  // still holds it in `file` (or, for the company master source, the
+  // backend re-downloads it from Storage), so this just re-requests with
+  // the new header_row and the preview/mapping refresh from the response.
   function handleHeaderRowChange(row: number) {
-    if (!file) return;
+    if (excelSource === "upload" && !file) return;
     setHeaderRow(row);
     loadFile(file, sheet, row);
   }
 
   async function handleImport() {
-    if (!file || !sheet || headerRow == null) return;
+    if (!sheet || headerRow == null) return;
+    if (excelSource === "upload" && !file) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await api.quotation.importProducts(file, sheet, mapping, headerRow);
+      const result = await api.quotation.importProducts(file, sheet, mapping, headerRow, excelSource);
       setImported(true);
-      onImported(result.products, file.name);
+      const sourceName = excelSource === "company_master" && masterMeta?.exists ? masterMeta.filename : (file?.name ?? "");
+      onImported(result.products, sourceName);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "An unexpected error occurred.");
     } finally {
@@ -100,28 +116,64 @@ export function ProductImportPanel({
     }
   }
 
-  const canImport = !!file && !!sheet && headerRow != null && !!mapping.product_name && !!mapping.price;
+  const canImport =
+    (excelSource === "company_master" || !!file) && !!sheet && headerRow != null && !!mapping.product_name && !!mapping.price;
+
+  function selectSource(source: ExcelSource) {
+    setExcelSource(source);
+    setFile(null);
+    resetFileState();
+    setError(null);
+    if (source === "company_master") loadFile(null);
+  }
 
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-      <p className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Upload Product Excel</p>
+      <p className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Product Excel</p>
       <ErrorBanner message={error} />
+
+      <fieldset className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input type="radio" checked={excelSource === "upload"} onChange={() => selectSource("upload")} />
+          Upload New Excel
+        </label>
+        <label
+          className={`flex items-center gap-2 text-sm ${
+            masterMeta?.exists ? "text-slate-700 dark:text-slate-300" : "text-slate-400 dark:text-slate-600"
+          }`}
+        >
+          <input
+            type="radio"
+            checked={excelSource === "company_master"}
+            disabled={!masterMeta?.exists}
+            onChange={() => selectSource("company_master")}
+          />
+          Use Company Master Excel
+          {masterMeta?.exists && <span className="text-xs text-slate-400 dark:text-slate-500">({masterMeta.filename})</span>}
+        </label>
+      </fieldset>
+      {masterMeta !== null && !masterMeta.exists && (
+        <p className="mb-3 text-xs text-slate-400 dark:text-slate-500">No Company Master Excel has been uploaded.</p>
+      )}
+
       <div className="mt-3 space-y-3">
-        <FileDropInput
-          label="Product Excel"
-          fileName={file?.name ?? null}
-          fileSize={file?.size}
-          onChange={(f) => {
-            setFile(f);
-            resetFileState();
-            loadFile(f);
-          }}
-          onClear={() => {
-            setFile(null);
-            resetFileState();
-            setError(null);
-          }}
-        />
+        {excelSource === "upload" && (
+          <FileDropInput
+            label="Product Excel"
+            fileName={file?.name ?? null}
+            fileSize={file?.size}
+            onChange={(f) => {
+              setFile(f);
+              resetFileState();
+              loadFile(f);
+            }}
+            onClear={() => {
+              setFile(null);
+              resetFileState();
+              setError(null);
+            }}
+          />
+        )}
 
         {sheetNames.length > 1 && (
           <div className="flex items-center gap-3">
@@ -130,7 +182,7 @@ export function ProductImportPanel({
               value={sheet}
               onChange={(e) => {
                 setSheet(e.target.value);
-                if (file) loadFile(file, e.target.value);
+                loadFile(file, e.target.value);
               }}
               className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
             >

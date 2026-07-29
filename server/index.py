@@ -8,7 +8,9 @@ from _auth import router as auth_router
 from _collection_routes import router as collection_router
 from _comparator_routes import router as comparator_router
 from _inventory_routes import router as inventory_router
+from _master_excel_routes import router as master_excel_router
 from _quotation_routes import router as quotation_router
+from _users_routes import router as users_router
 
 app = FastAPI(title="Garg Dental Operations Toolkit API")
 
@@ -17,6 +19,8 @@ app.include_router(comparator_router)
 app.include_router(collection_router)
 app.include_router(inventory_router)
 app.include_router(quotation_router)
+app.include_router(users_router)
+app.include_router(master_excel_router)
 
 
 @app.get("/api/ping")

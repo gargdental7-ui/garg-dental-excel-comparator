@@ -9,15 +9,23 @@ const MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 // routing, /api/* requests never reach this frontend service at all, so
 // this proxy cannot enforce anything for the API; the actual enforcement
 // is the require_auth dependency in server/_auth.py on every tool route.
+// Cookie shape is `{issuedAt}.{userId}.{signature}` (signature covers both
+// issuedAt and userId) - matches server/_auth.py's _sign()/_parse_cookie()
+// exactly. This proxy only checks the signature/expiry are well-formed; it
+// has no DB access to confirm the user still exists/is active, which is
+// why it stays UX-only - server/_auth.py's require_auth is what actually
+// re-resolves and validates the user on every /api/* call.
 function isValidSession(cookieValue: string | undefined): boolean {
   if (!cookieValue) return false;
   const secret = process.env.SESSION_SECRET;
   if (!secret) return false;
 
-  const [issuedAt, signature] = cookieValue.split(".");
-  if (!issuedAt || !signature || !/^\d+$/.test(issuedAt)) return false;
+  const parts = cookieValue.split(".");
+  if (parts.length !== 3) return false;
+  const [issuedAt, userId, signature] = parts;
+  if (!issuedAt || !userId || !signature || !/^\d+$/.test(issuedAt)) return false;
 
-  const expected = createHmac("sha256", secret).update(issuedAt).digest("hex");
+  const expected = createHmac("sha256", secret).update(`${issuedAt}.${userId}`).digest("hex");
   const expectedBuf = Buffer.from(expected, "utf8");
   const actualBuf = Buffer.from(signature, "utf8");
   if (expectedBuf.length !== actualBuf.length) return false;

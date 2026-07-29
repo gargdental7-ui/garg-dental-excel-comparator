@@ -1,16 +1,31 @@
 """Company profile registry for the Smart Quotation Generator.
 
-Each company is one entry here plus one authored template .docx in
-app/quotation_templates/ - adding a second company later means adding one
-CompanyProfile and one template file, never touching the rendering engine,
-validation, or totals math in quotation.py / quotation_docx.py.
+Historically a hardcoded dict; Phase 1 of the platform upgrade makes this
+DB-backed via the `companies` table, but keeps the exact same public API
+(get_company, list_companies, CompanyProfile) so every existing caller -
+app/quotation_docx.py, server/_quotation_routes.py, and the pre-existing
+test suite - is unaffected. Falls back to the original hardcoded entry
+below when DATABASE_URL isn't configured (e.g. local dev before Supabase
+env vars are set) or the DB is unreachable, so nothing breaks mid-migration
+or in environments (like this package's own test suite, or the Tkinter
+desktop app, which never had a DB dependency) that don't have server/ on
+their Python path at all.
+
+Adding a second company means adding one row to the `companies` table (or,
+before Phase 1's DB is live anywhere, one more _FALLBACK_COMPANIES entry)
+plus one template file - never touching the rendering engine, validation,
+or totals math in quotation.py / quotation_docx.py.
 """
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from .exceptions import UnknownCompanyError
 
 TEMPLATES_DIR = Path(__file__).parent / "quotation_templates"
+
+logger = logging.getLogger("gargdental.quotation_companies")
 
 
 @dataclass
@@ -28,7 +43,10 @@ class CompanyProfile:
         return TEMPLATES_DIR / self.template_filename
 
 
-COMPANIES = {
+# Fallback seed data - kept in sync with server/migrations/0001_initial_schema.sql's
+# seed insert. Used whenever the DB isn't configured/reachable or has no
+# matching row yet.
+_FALLBACK_COMPANIES = {
     "garg_dental": CompanyProfile(
         id="garg_dental",
         display_name="Garg Dental Pvt. Ltd",
@@ -66,13 +84,59 @@ COMPANIES = {
     )
 }
 
+_cache: Optional[dict] = None
+
+
+def _row_to_profile(row: dict) -> CompanyProfile:
+    return CompanyProfile(
+        id=row["slug"],
+        display_name=row["display_name"],
+        template_filename=row["template_filename"],
+        terms_and_conditions=[tuple(pair) for pair in row["terms_and_conditions"]],
+        default_currency=row["default_currency"],
+        default_vat_rate=float(row["default_vat_rate"]),
+        default_validity=row["default_validity"],
+    )
+
+
+def _load_from_db() -> Optional[dict]:
+    try:
+        from _db import get_connection, is_configured  # server-only module; absent for the desktop app / this package's own tests
+    except ImportError:
+        return None
+
+    if not is_configured():
+        return None
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "select slug, display_name, template_filename, default_currency, "
+                    "default_vat_rate, default_validity, terms_and_conditions from companies"
+                )
+                rows = cur.fetchall()
+        if not rows:
+            return None
+        return {row["slug"]: _row_to_profile(row) for row in rows}
+    except Exception:
+        logger.exception("Failed to load companies from the database; falling back to built-in defaults.")
+        return None
+
+
+def _companies() -> dict:
+    global _cache
+    if _cache is None:
+        _cache = _load_from_db() or dict(_FALLBACK_COMPANIES)
+    return _cache
+
 
 def get_company(company_id: str) -> CompanyProfile:
-    company = COMPANIES.get(company_id)
+    company = _companies().get(company_id)
     if company is None:
         raise UnknownCompanyError(company_id)
     return company
 
 
 def list_companies():
-    return list(COMPANIES.values())
+    return list(_companies().values())

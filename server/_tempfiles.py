@@ -23,6 +23,22 @@ def temp_upload_path(upload: UploadFile):
 
 
 @contextmanager
+def temp_download_path(content: bytes, suffix: str = ".xlsx"):
+    """Mirrors temp_upload_path's cleanup pattern for content that's already
+    in memory (e.g. downloaded from Supabase Storage) rather than arriving
+    as an UploadFile - so the company-master-Excel path can feed the exact
+    same open_workbook()-based pipeline as a direct upload, without that
+    pipeline needing to know the difference."""
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+    try:
+        yield tmp_path
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@contextmanager
 def temp_output_path(suffix=".xlsx"):
     tmp_path = Path(tempfile.mktemp(suffix=suffix))
     try:

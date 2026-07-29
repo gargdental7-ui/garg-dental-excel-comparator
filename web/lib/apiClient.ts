@@ -1,30 +1,52 @@
 import {
   ApiError,
   type ApiErrorDetail,
+  type AuthStatusResponse,
   type CollectionAnalyzeResponse,
   type CollectionInspectResponse,
   type ColumnMappingPair,
   type ComparatorAnalyzeResult,
   type ComparatorInspectResponse,
+  type CreateUserRequest,
+  type ExcelSource,
   type GenerateQuotationRequest,
   type InventoryAnalyzeResponse,
   type InventoryInspectResponse,
+  type ManagedUser,
+  type MasterExcelMetadata,
   type ProductColumnMapping,
   type QuotationProductsImportResponse,
   type QuotationProductsInspectResponse,
+  type UpdateUserRequest,
 } from "./types";
+
+async function readErrorDetail(res: Response): Promise<ApiErrorDetail> {
+  let detail: ApiErrorDetail = { message: "An unexpected error occurred." };
+  try {
+    const body = await res.json();
+    if (body?.detail) detail = body.detail;
+  } catch {
+    // response wasn't JSON - keep the generic message
+  }
+  return detail;
+}
 
 async function postForm<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(path, { method: "POST", body: form });
   if (!res.ok) {
-    let detail: ApiErrorDetail = { message: "An unexpected error occurred." };
-    try {
-      const body = await res.json();
-      if (body?.detail) detail = body.detail;
-    } catch {
-      // response wasn't JSON - keep the generic message
-    }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, await readErrorDetail(res));
+  }
+  return res.json() as Promise<T>;
+}
+
+async function jsonRequest<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorDetail(res));
   }
   return res.json() as Promise<T>;
 }
@@ -154,21 +176,54 @@ export const api = {
     },
   },
   quotation: {
-    inspectProducts: (file: File, sheet?: string, headerRow?: number) => {
+    inspectProducts: (file: File | null, sheet?: string, headerRow?: number, excelSource: ExcelSource = "upload") => {
       const form = new FormData();
-      form.append("file", file);
+      form.append("excel_source", excelSource);
+      if (file) form.append("file", file);
       if (sheet) form.append("sheet", sheet);
       if (headerRow != null) form.append("header_row", String(headerRow));
       return postForm<QuotationProductsInspectResponse>(`/api/quotation/products/inspect`, form);
     },
-    importProducts: (file: File, sheet: string, mapping: ProductColumnMapping, headerRow?: number) => {
+    importProducts: (
+      file: File | null,
+      sheet: string,
+      mapping: ProductColumnMapping,
+      headerRow?: number,
+      excelSource: ExcelSource = "upload",
+    ) => {
       const form = new FormData();
-      form.append("file", file);
+      form.append("excel_source", excelSource);
+      if (file) form.append("file", file);
       form.append("sheet", sheet);
       form.append("mapping", JSON.stringify(mapping));
       if (headerRow != null) form.append("header_row", String(headerRow));
       return postForm<QuotationProductsImportResponse>(`/api/quotation/products/import`, form);
     },
     generate: (payload: GenerateQuotationRequest) => postJsonForBlob(`/api/quotation/generate`, payload),
+  },
+  masterExcel: {
+    getMetadata: () => jsonRequest<MasterExcelMetadata>("GET", "/api/master-excel"),
+    upload: async (file: File): Promise<MasterExcelMetadata> => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/master-excel", { method: "PUT", body: form });
+      if (!res.ok) throw new ApiError(res.status, await readErrorDetail(res));
+      return res.json() as Promise<MasterExcelMetadata>;
+    },
+    remove: () => jsonRequest<{ ok: true }>("DELETE", "/api/master-excel"),
+    downloadUrl: "/api/master-excel/download",
+  },
+  auth: {
+    login: (username: string, password: string) => jsonRequest<{ ok: true }>("POST", "/api/auth/login", { username, password }),
+    logout: () => jsonRequest<{ ok: true }>("POST", "/api/auth/logout"),
+    status: () => jsonRequest<AuthStatusResponse>("GET", "/api/auth/status"),
+  },
+  users: {
+    list: () => jsonRequest<{ users: ManagedUser[] }>("GET", "/api/users"),
+    create: (payload: CreateUserRequest) => jsonRequest<ManagedUser>("POST", "/api/users", payload),
+    update: (userId: string, payload: UpdateUserRequest) => jsonRequest<ManagedUser>("PATCH", `/api/users/${userId}`, payload),
+    resetPassword: (userId: string, newPassword: string) =>
+      jsonRequest<{ ok: true }>("POST", `/api/users/${userId}/reset-password`, { new_password: newPassword }),
+    remove: (userId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/users/${userId}`),
   },
 };

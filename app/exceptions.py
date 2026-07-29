@@ -93,3 +93,13 @@ class DuplicateQuotationItemError(AppError):
     def __init__(self, duplicate_names):
         joined = ", ".join(duplicate_names)
         super().__init__(f"The following product(s) were added more than once: {joined}.")
+
+
+class NoMasterExcelError(AppError):
+    def __init__(self):
+        super().__init__("No Company Master Excel has been uploaded.")
+
+
+class MissingUploadedFileError(AppError):
+    def __init__(self):
+        super().__init__("Please choose an Excel file to upload.")

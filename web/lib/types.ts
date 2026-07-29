@@ -329,3 +329,47 @@ export interface GenerateQuotationRequest {
   proposal: QuotationProposal;
   items: Omit<QuotationItem, "id">[];
 }
+
+// -------------------------------------------------------------------- Auth
+export interface CurrentUser {
+  id: string;
+  username: string;
+  fullName: string;
+  role: "admin" | "staff";
+  companyId: string;
+}
+
+export interface AuthStatusResponse {
+  authenticated: boolean;
+  user?: CurrentUser;
+}
+
+// ------------------------------------------------------------------- Users
+export interface ManagedUser {
+  id: string;
+  username: string;
+  fullName: string;
+  role: "admin" | "staff";
+  active: boolean;
+  createdAt: string;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  full_name: string;
+  password: string;
+  role: "admin" | "staff";
+}
+
+export interface UpdateUserRequest {
+  full_name?: string;
+  role?: "admin" | "staff";
+  active?: boolean;
+}
+
+// ------------------------------------------------------------ Master Excel
+export type ExcelSource = "upload" | "company_master";
+
+export type MasterExcelMetadata =
+  | { exists: false }
+  | { exists: true; filename: string; uploadedAt: string; uploadedBy: string; fileSize: number };

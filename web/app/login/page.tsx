@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -20,11 +21,11 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        setError(body?.detail?.message ?? "Incorrect password.");
+        setError(body?.detail?.message ?? "Incorrect username or password.");
         return;
       }
       const next = searchParams.get("next") || "/";
@@ -55,13 +56,26 @@ function LoginForm() {
         <h1 className="text-center text-lg font-bold text-slate-900 dark:text-slate-50">Garg Dental</h1>
         <p className="mb-6 text-center text-sm text-slate-500 dark:text-slate-400">Operations Toolkit</p>
 
+        <label htmlFor="username" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+          Username
+        </label>
+        <input
+          id="username"
+          type="text"
+          autoFocus
+          autoComplete="username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="mb-4 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-500"
+        />
+
         <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
           Password
         </label>
         <input
           id="password"
           type="password"
-          autoFocus
+          autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="mb-4 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-500"
@@ -69,7 +83,7 @@ function LoginForm() {
 
         {error && <p className="mb-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-        <Button type="submit" disabled={submitting || !password} className="w-full">
+        <Button type="submit" disabled={submitting || !username || !password} className="w-full">
           {submitting ? "Signing in..." : "Sign In"}
         </Button>
       </form>

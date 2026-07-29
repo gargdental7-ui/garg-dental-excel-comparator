@@ -3,10 +3,11 @@ Collection/Inventory's inspect pattern) plus one JSON-body /generate route
 - the first non-multipart endpoint in this API, since generating a
 quotation never involves a file upload."""
 import json
+from contextlib import contextmanager
 from typing import List, Optional
 
 from app import generic_excel, quotation
-from app.exceptions import GenericHeaderDetectionError, InvalidHeaderRowError
+from app.exceptions import GenericHeaderDetectionError, InvalidHeaderRowError, MissingUploadedFileError
 from app.quotation import ProductColumnMapping, QuotationCustomer, QuotationItem, QuotationProposal
 from app.quotation_companies import get_company
 from app.quotation_docx import default_output_filename, render_quotation_docx
@@ -14,12 +15,13 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from _auth import require_auth
+from _auth import CurrentUser, require_auth
 from _errors import handle_app_errors
 from _excel_loading import open_workbook
+from _master_excel_routes import fetch_master_excel_bytes
 from _mapping_heuristics import PRODUCT_CANDIDATES, suggest_mapping
 from _serialization import mapping_kwargs
-from _tempfiles import temp_upload_path
+from _tempfiles import temp_download_path, temp_upload_path
 
 router = APIRouter(prefix="/api/quotation", dependencies=[Depends(require_auth)])
 
@@ -51,14 +53,36 @@ def _resolve_header_row(worksheet, header_row: Optional[int]):
     return detected_row, detected_row
 
 
+@contextmanager
+def _resolve_excel_path(file: Optional[UploadFile], excel_source: str, current_user: CurrentUser):
+    """Feeds either a fresh upload or the company's stored Master Excel into
+    the same temp-file-backed path every open_workbook() caller already
+    expects - open_workbook/generic_excel/_mapping_heuristics need no
+    changes at all for the Master Excel source, they never know which one
+    they got. current_user.company_id (not a client-supplied value) scopes
+    the master-excel lookup, so a request can't read another company's
+    file by passing a different company_id."""
+    if excel_source == "company_master":
+        content = fetch_master_excel_bytes(current_user)
+        with temp_download_path(content) as path:
+            yield path
+    else:
+        if file is None:
+            raise MissingUploadedFileError()
+        with temp_upload_path(file) as path:
+            yield path
+
+
 @router.post("/products/inspect")
 @handle_app_errors
 def inspect_products(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    excel_source: str = Form("upload"),
     sheet: Optional[str] = Form(None),
     header_row: Optional[int] = Form(None),
+    current_user: CurrentUser = Depends(require_auth),
 ):
-    with temp_upload_path(file) as path:
+    with _resolve_excel_path(file, excel_source, current_user) as path:
         workbook = open_workbook(path)
         sheet_names = workbook.sheetnames
         selected_sheet = sheet or sheet_names[0]
@@ -89,12 +113,14 @@ def inspect_products(
 @router.post("/products/import")
 @handle_app_errors
 def import_products(
-    file: UploadFile = File(...),
     sheet: str = Form(...),
     mapping: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+    excel_source: str = Form("upload"),
     header_row: Optional[int] = Form(None),
+    current_user: CurrentUser = Depends(require_auth),
 ):
-    with temp_upload_path(file) as path:
+    with _resolve_excel_path(file, excel_source, current_user) as path:
         workbook = open_workbook(path)
         worksheet = workbook[sheet]
         # header_row is omitted only by callers that never fetched a
