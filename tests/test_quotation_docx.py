@@ -1,5 +1,6 @@
 import base64
 import io
+from pathlib import Path
 
 import docx
 import pytest
@@ -9,6 +10,13 @@ from PIL import Image
 from app import quotation, quotation_docx
 from app.quotation import QuotationCustomer, QuotationItem, QuotationProposal
 from app.quotation_companies import get_company, get_company_by_slug
+
+_TEMPLATE_BYTES = (
+    Path(__file__).resolve().parent.parent
+    / "app"
+    / "quotation_templates"
+    / "equipment_proposal_garg_dental.docx"
+).read_bytes()
 
 # Minimal 1x1 red PNG, used to verify image embedding doesn't crash the render.
 _PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -39,7 +47,9 @@ def _proposal(**overrides):
 def _render_and_reopen(items, customer=None, proposal=None):
     company = get_company_by_slug("garg_dental")
     totals = quotation.compute_totals(items, vat_rate=company.default_vat_rate)
-    content = quotation_docx.render_quotation_docx(company, customer or _customer(), proposal or _proposal(), items, totals)
+    content = quotation_docx.render_quotation_docx(
+        company, customer or _customer(), proposal or _proposal(), items, totals, _TEMPLATE_BYTES
+    )
     return docx.Document(io.BytesIO(content)), totals
 
 

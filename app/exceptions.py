@@ -113,3 +113,13 @@ class CompanyDataUnavailableError(AppError):
 class NoQuotationTemplateError(AppError):
     def __init__(self, company_display_name: str):
         super().__init__(f"{company_display_name} has no quotation template uploaded yet.")
+
+
+class InvalidTemplateError(AppError):
+    def __init__(self):
+        super().__init__("The selected file could not be opened as a Word document (.docx).")
+
+
+class InvalidLogoError(AppError):
+    def __init__(self):
+        super().__init__("The selected file could not be opened as an image.")

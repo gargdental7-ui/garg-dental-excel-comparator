@@ -7,6 +7,7 @@ import {
   type CollectionInspectResponse,
   type ColumnMappingPair,
   type Company,
+  type CompanyLogoMetadata,
   type ComparatorAnalyzeResult,
   type ComparatorInspectResponse,
   type CreateCompanyRequest,
@@ -22,6 +23,7 @@ import {
   type QuotationHistoryResponse,
   type QuotationProductsImportResponse,
   type QuotationProductsInspectResponse,
+  type QuotationTemplateMetadata,
   type StaffSummaryEntry,
   type UpdateCompanyRequest,
   type UpdateUserRequest,
@@ -222,6 +224,38 @@ export const api = {
     },
     remove: (companyId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/master-excel?company_id=${encodeURIComponent(companyId)}`),
     downloadUrl: (companyId: string) => `/api/master-excel/download?company_id=${encodeURIComponent(companyId)}`,
+  },
+  companyAssets: {
+    getTemplateMetadata: (companyId: string) =>
+      jsonRequest<QuotationTemplateMetadata>("GET", `/api/company-assets/template?company_id=${encodeURIComponent(companyId)}`),
+    uploadTemplate: async (file: File, companyId: string): Promise<QuotationTemplateMetadata> => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/company-assets/template?company_id=${encodeURIComponent(companyId)}`, {
+        method: "PUT",
+        body: form,
+      });
+      if (!res.ok) throw new ApiError(res.status, await readErrorDetail(res));
+      return res.json() as Promise<QuotationTemplateMetadata>;
+    },
+    removeTemplate: (companyId: string) =>
+      jsonRequest<{ ok: true }>("DELETE", `/api/company-assets/template?company_id=${encodeURIComponent(companyId)}`),
+    downloadTemplateUrl: (companyId: string) =>
+      `/api/company-assets/template/download?company_id=${encodeURIComponent(companyId)}`,
+    getLogoMetadata: (companyId: string) =>
+      jsonRequest<CompanyLogoMetadata>("GET", `/api/company-assets/logo?company_id=${encodeURIComponent(companyId)}`),
+    uploadLogo: async (file: File, companyId: string): Promise<CompanyLogoMetadata> => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/company-assets/logo?company_id=${encodeURIComponent(companyId)}`, {
+        method: "PUT",
+        body: form,
+      });
+      if (!res.ok) throw new ApiError(res.status, await readErrorDetail(res));
+      return res.json() as Promise<CompanyLogoMetadata>;
+    },
+    removeLogo: (companyId: string) =>
+      jsonRequest<{ ok: true }>("DELETE", `/api/company-assets/logo?company_id=${encodeURIComponent(companyId)}`),
   },
   quotationHistory: {
     list: (filters: QuotationHistoryFilters = {}) => {

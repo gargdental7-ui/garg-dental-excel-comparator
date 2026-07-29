@@ -14,6 +14,7 @@ import {
   Users as UsersIcon,
   Activity,
   Building2,
+  Layers,
 } from "lucide-react";
 import { useCurrentUser } from "@/lib/useCurrentUser";
 import type { Role } from "@/lib/types";
@@ -26,6 +27,7 @@ const LINKS: { href: string; label: string; icon: typeof GitCompare; roles: Role
   { href: "/quotation/history", label: "Quotation History", icon: History, roles: ["super_admin", "staff"] },
   { href: "/companies", label: "Companies", icon: Building2, roles: ["super_admin"] },
   { href: "/settings/master-excel", label: "Master Excel", icon: FileSpreadsheet, roles: ["super_admin"] },
+  { href: "/settings/company-assets", label: "Company Assets", icon: Layers, roles: ["super_admin"] },
   { href: "/users", label: "Users", icon: UsersIcon, roles: ["super_admin"] },
   { href: "/activity", label: "Activity Logs", icon: Activity, roles: ["super_admin"] },
 ];

@@ -10,6 +10,7 @@ from _comparator_routes import router as comparator_router
 from _inventory_routes import router as inventory_router
 from _audit_routes import router as audit_router
 from _companies_routes import router as companies_router
+from _company_assets_routes import router as company_assets_router
 from _master_excel_routes import router as master_excel_router
 from _quotation_history_routes import router as quotation_history_router
 from _quotation_routes import router as quotation_router
@@ -27,6 +28,7 @@ app.include_router(users_router)
 app.include_router(master_excel_router)
 app.include_router(audit_router)
 app.include_router(companies_router)
+app.include_router(company_assets_router)
 
 
 @app.get("/api/ping")

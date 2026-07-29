@@ -408,6 +408,13 @@ export type MasterExcelMetadata =
   | { exists: false }
   | { exists: true; filename: string; uploadedAt: string; uploadedBy: string; fileSize: number };
 
+// ---------------------------------------------------------- Company Assets
+export type QuotationTemplateMetadata =
+  | { exists: false }
+  | { exists: true; filename: string; uploadedAt: string; uploadedBy: string; fileSize: number };
+
+export type CompanyLogoMetadata = { exists: false } | { exists: true; uploadedAt: string };
+
 // -------------------------------------------------------- Quotation History
 export interface QuotationHistoryEntry {
   id: string;

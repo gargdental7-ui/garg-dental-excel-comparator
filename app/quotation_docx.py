@@ -1,10 +1,14 @@
 """Renders a Quotation into the company's Word proposal template via
-docxtpl. The template IS the reference Garg Dental proposal document
-(app/quotation_templates/), minimally edited in place with Jinja
-placeholders - see scripts/build_quotation_template.py for how it was
-built. This module only ever fills in data; it never constructs document
-layout from scratch, so formatting stays byte-identical to the reference
-outside of the fields that are actually meant to change.
+docxtpl. Originally the template was always the reference Garg Dental
+proposal document read from a static file in app/quotation_templates/
+(see scripts/build_quotation_template.py for how that one was built);
+Phase C of the multi-tenant redesign moved templates to a per-company
+Storage upload instead, so render_quotation_docx now takes the template
+as bytes - the caller (server/_quotation_routes.py) is responsible for
+fetching those bytes from Storage, this module stays storage-agnostic and
+only ever fills in data. It never constructs document layout from
+scratch, so formatting stays byte-identical to whatever template was
+uploaded outside of the fields that are actually meant to change.
 """
 import base64
 import binascii
@@ -12,12 +16,12 @@ import io
 import logging
 import re
 from datetime import datetime
+from typing import Optional
 
 from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage
 from PIL import Image, UnidentifiedImageError
 
-from .exceptions import NoQuotationTemplateError
 from .quotation import ItemTotal, compute_item_total
 from .quotation_companies import CompanyProfile
 
@@ -92,10 +96,49 @@ def _build_item_context(tpl, item):
     }
 
 
-def render_quotation_docx(company: CompanyProfile, customer, proposal, items, totals) -> bytes:
-    if company.template_path is None:
-        raise NoQuotationTemplateError(company.display_name)
-    tpl = DocxTemplate(str(company.template_path))
+LOGO_IMAGE_WIDTH = Mm(35)
+SIGNATURE_IMAGE_WIDTH = Mm(35)
+
+
+def render_quotation_docx(
+    company: CompanyProfile,
+    customer,
+    proposal,
+    items,
+    totals,
+    template_bytes: bytes,
+    logo_bytes: Optional[bytes] = None,
+    signature: Optional[dict] = None,
+) -> bytes:
+    """template_bytes/logo_bytes come from Supabase Storage (fetched by the
+    caller, not this module) via server/_company_assets_routes.py.
+    `signature`, when provided, is {"image_bytes": bytes, "name": str,
+    "designation": str} from server/_signatures_routes.py (Phase D) -
+    optional because not every quotation has one selected. Both logo and
+    signature are only visible in the output if the uploaded template
+    actually references the corresponding tag ({{ company_logo }},
+    {{ signature.image }} etc.) - see docs/quotation-template-tags.md."""
+    tpl = DocxTemplate(io.BytesIO(template_bytes))
+
+    logo_image = None
+    if logo_bytes:
+        png_bytes = _normalize_image_to_png(logo_bytes)
+        if png_bytes:
+            logo_image = InlineImage(tpl, io.BytesIO(png_bytes), width=LOGO_IMAGE_WIDTH)
+
+    signature_context = None
+    if signature:
+        signature_image = None
+        raw_signature_image = signature.get("image_bytes")
+        if raw_signature_image:
+            png_bytes = _normalize_image_to_png(raw_signature_image)
+            if png_bytes:
+                signature_image = InlineImage(tpl, io.BytesIO(png_bytes), width=SIGNATURE_IMAGE_WIDTH)
+        signature_context = {
+            "image": signature_image,
+            "name": signature.get("name", ""),
+            "designation": signature.get("designation", ""),
+        }
 
     context = {
         "proposal": {
@@ -111,6 +154,8 @@ def render_quotation_docx(company: CompanyProfile, customer, proposal, items, to
             "reference_number": customer.reference_number,
         },
         "company": {"terms": company.terms_and_conditions},
+        "company_logo": logo_image,
+        "signature": signature_context,
         "items": [_build_item_context(tpl, item) for item in items],
         "totals": {
             "subtotal_formatted": _fmt_currency(totals.subtotal),
@@ -132,7 +177,8 @@ def render_quotation_docx(company: CompanyProfile, customer, proposal, items, to
     return buffer.getvalue()
 
 
-def default_output_filename(customer, proposal) -> str:
+def default_output_filename(company: CompanyProfile, customer, proposal) -> str:
     date_str = datetime.now().strftime("%Y-%m-%d")
+    safe_company = re.sub(r"[^A-Za-z0-9]+", "_", company.display_name).strip("_")
     safe_name = re.sub(r"[^A-Za-z0-9]+", "_", customer.customer_name or "Quotation").strip("_")
-    return f"Garg_Dental_Quotation_{safe_name}_{date_str}.docx"
+    return f"{safe_company}_Quotation_{safe_name}_{date_str}.docx"

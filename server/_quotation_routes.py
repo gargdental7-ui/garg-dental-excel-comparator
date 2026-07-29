@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from app import generic_excel, quotation
-from app.exceptions import GenericHeaderDetectionError, InvalidHeaderRowError, MissingUploadedFileError
+from app.exceptions import GenericHeaderDetectionError, InvalidHeaderRowError, MissingUploadedFileError, NoQuotationTemplateError
 from app.quotation import ProductColumnMapping, QuotationCustomer, QuotationItem, QuotationProposal
 from app.quotation_companies import get_company
 from app.quotation_docx import default_output_filename, render_quotation_docx
@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from _audit import log_action
 from _auth import CurrentUser, require_auth
+from _company_assets_routes import fetch_company_logo_bytes, fetch_company_template_bytes
 from _db import get_connection
 from _errors import handle_app_errors
 from _excel_loading import open_workbook
@@ -295,8 +296,14 @@ def generate(payload: GenerateQuotationRequest, request: Request, current_user: 
 
     quotation.validate_quotation(customer, items)
     totals = quotation.compute_totals(items, vat_rate=company.default_vat_rate)
-    content = render_quotation_docx(company, customer, proposal, items, totals)
-    filename = default_output_filename(customer, proposal)
+
+    template_bytes = fetch_company_template_bytes(current_user, scope)
+    if template_bytes is None:
+        raise NoQuotationTemplateError(company.display_name)
+    logo_bytes = fetch_company_logo_bytes(current_user, scope)
+
+    content = render_quotation_docx(company, customer, proposal, items, totals, template_bytes, logo_bytes)
+    filename = default_output_filename(company, customer, proposal)
 
     _persist_quotation(current_user, scope, customer, content, request)
 

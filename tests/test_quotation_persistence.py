@@ -10,6 +10,7 @@ a backend outage - and (2) the WHERE clause _quotation_history_routes.py
 builds actually differs by role, since that's the real authorization
 boundary for "staff only sees their own quotations"."""
 import os
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -29,6 +30,13 @@ FAKE_COMPANY = CompanyProfile(
     display_name="Test Company",
     template_filename="equipment_proposal_garg_dental.docx",
 )
+
+_TEMPLATE_BYTES = (
+    Path(__file__).resolve().parent.parent
+    / "app"
+    / "quotation_templates"
+    / "equipment_proposal_garg_dental.docx"
+).read_bytes()
 
 SUPER_ADMIN = _auth.CurrentUser(
     id="super-1", company_id=None, username="admin", full_name="Admin", role="super_admin", active=True
@@ -123,6 +131,8 @@ def fake_db_state(monkeypatch):
 def test_generate_returns_docx_and_saves_final_status_when_pdf_succeeds(client, monkeypatch, fake_db_state):
     _login_as(client, monkeypatch, STAFF)
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
     monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
     monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
 
@@ -140,6 +150,8 @@ def test_generate_returns_docx_and_saves_final_status_when_pdf_succeeds(client, 
 def test_generate_still_returns_docx_when_pdf_conversion_fails(client, monkeypatch, fake_db_state):
     _login_as(client, monkeypatch, STAFF)
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
 
     def raise_conversion_error(docx_bytes, filename):
         raise RuntimeError("CloudConvert is down")
@@ -159,6 +171,8 @@ def test_generate_still_returns_docx_when_pdf_conversion_fails(client, monkeypat
 def test_generate_still_returns_docx_when_persistence_entirely_fails(client, monkeypatch):
     _login_as(client, monkeypatch, STAFF)
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
 
     def raise_db_error(**kwargs):
         raise RuntimeError("DB is unreachable")
