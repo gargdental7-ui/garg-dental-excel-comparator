@@ -373,3 +373,30 @@ export type ExcelSource = "upload" | "company_master";
 export type MasterExcelMetadata =
   | { exists: false }
   | { exists: true; filename: string; uploadedAt: string; uploadedBy: string; fileSize: number };
+
+// -------------------------------------------------------- Quotation History
+export interface QuotationHistoryEntry {
+  id: string;
+  quoteNumber: number;
+  customerName: string;
+  createdBy: string;
+  createdAt: string;
+  status: "final" | "pdf_pending";
+  hasPdf: boolean;
+}
+
+export interface QuotationHistoryResponse {
+  quotations: QuotationHistoryEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface QuotationHistoryFilters {
+  customer?: string;
+  quoteNumber?: number;
+  staffId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+}

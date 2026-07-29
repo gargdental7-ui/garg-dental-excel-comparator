@@ -3,7 +3,9 @@ Collection/Inventory's inspect pattern) plus one JSON-body /generate route
 - the first non-multipart endpoint in this API, since generating a
 quotation never involves a file upload."""
 import json
+import logging
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from app import generic_excel, quotation
@@ -16,12 +18,20 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from _auth import CurrentUser, require_auth
+from _db import get_connection
 from _errors import handle_app_errors
 from _excel_loading import open_workbook
 from _master_excel_routes import fetch_master_excel_bytes
 from _mapping_heuristics import PRODUCT_CANDIDATES, suggest_mapping
+from _pdf_conversion import convert_docx_to_pdf
 from _serialization import mapping_kwargs
+from _storage import upload as storage_upload
 from _tempfiles import temp_download_path, temp_upload_path
+
+logger = logging.getLogger("gargdental.quotation_persistence")
+
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PDF_MEDIA_TYPE = "application/pdf"
 
 router = APIRouter(prefix="/api/quotation", dependencies=[Depends(require_auth)])
 
@@ -192,9 +202,76 @@ class GenerateQuotationRequest(BaseModel):
     items: List[QuotationItemIn]
 
 
+def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, docx_bytes: bytes) -> None:
+    """Best-effort save of the just-rendered quotation (DOCX always, PDF
+    when conversion succeeds) to Storage + DB. Deliberately never raises -
+    "existing functionality must keep working exactly as today" means a
+    Storage/DB/CloudConvert outage must not stop a staff member from
+    getting their DOCX to send to a customer right now, so any failure
+    here is logged and swallowed rather than turned into a 500. A PDF
+    conversion failure specifically still lets the DOCX save proceed
+    (status="pdf_pending"), since those are independent failure modes."""
+    try:
+        pdf_bytes = None
+        try:
+            pdf_bytes = convert_docx_to_pdf(docx_bytes, "quotation.docx")
+        except Exception:
+            logger.exception("PDF conversion failed; the quotation will still be saved as DOCX-only")
+
+        now = datetime.now(timezone.utc)
+        with get_connection(
+            company_id=current_user.company_id, user_id=current_user.id, role=current_user.role
+        ) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "insert into quote_number_counters (company_id, next_number) values (%s, 2) "
+                    "on conflict (company_id) do update set next_number = quote_number_counters.next_number + 1 "
+                    "returning (next_number - 1) as quote_number",
+                    (current_user.company_id,),
+                )
+                quote_number = cur.fetchone()["quote_number"]
+
+            folder = f"{current_user.company_id}/Quotations/{now.year}/{now.month:02d}"
+            docx_path = f"{folder}/Quote-{quote_number:04d}.docx"
+            pdf_path = f"{folder}/Quote-{quote_number:04d}.pdf" if pdf_bytes else None
+
+            storage_upload("quotations-docx", docx_path, docx_bytes, DOCX_MEDIA_TYPE)
+            if pdf_bytes:
+                storage_upload("quotations-pdf", pdf_path, pdf_bytes, PDF_MEDIA_TYPE)
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    "insert into quotations "
+                    "(company_id, quote_number, customer_name, created_by, status, docx_storage_path, pdf_storage_path) "
+                    "values (%s, %s, %s, %s, %s, %s, %s) returning id",
+                    (
+                        current_user.company_id,
+                        quote_number,
+                        customer.customer_name,
+                        current_user.id,
+                        "final" if pdf_bytes else "pdf_pending",
+                        docx_path,
+                        pdf_path,
+                    ),
+                )
+                quotation_id = cur.fetchone()["id"]
+
+                cur.execute(
+                    "insert into quotation_files (quotation_id, kind, storage_path, size_bytes) values (%s, 'docx', %s, %s)",
+                    (quotation_id, docx_path, len(docx_bytes)),
+                )
+                if pdf_bytes:
+                    cur.execute(
+                        "insert into quotation_files (quotation_id, kind, storage_path, size_bytes) values (%s, 'pdf', %s, %s)",
+                        (quotation_id, pdf_path, len(pdf_bytes)),
+                    )
+    except Exception:
+        logger.exception("Failed to persist quotation; the DOCX response to the user is unaffected")
+
+
 @router.post("/generate")
 @handle_app_errors
-def generate(payload: GenerateQuotationRequest):
+def generate(payload: GenerateQuotationRequest, current_user: CurrentUser = Depends(require_auth)):
     company = get_company(payload.company_id)
     customer = QuotationCustomer(**payload.customer.model_dump())
     proposal = QuotationProposal(**payload.proposal.model_dump())
@@ -205,8 +282,10 @@ def generate(payload: GenerateQuotationRequest):
     content = render_quotation_docx(company, customer, proposal, items, totals)
     filename = default_output_filename(customer, proposal)
 
+    _persist_quotation(current_user, customer, content)
+
     return Response(
         content=content,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=DOCX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

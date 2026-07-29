@@ -15,6 +15,8 @@ import {
   type ManagedUser,
   type MasterExcelMetadata,
   type ProductColumnMapping,
+  type QuotationHistoryFilters,
+  type QuotationHistoryResponse,
   type QuotationProductsImportResponse,
   type QuotationProductsInspectResponse,
   type UpdateUserRequest,
@@ -212,6 +214,21 @@ export const api = {
     },
     remove: () => jsonRequest<{ ok: true }>("DELETE", "/api/master-excel"),
     downloadUrl: "/api/master-excel/download",
+  },
+  quotationHistory: {
+    list: (filters: QuotationHistoryFilters = {}) => {
+      const params = new URLSearchParams();
+      if (filters.customer) params.set("customer", filters.customer);
+      if (filters.quoteNumber != null) params.set("quote_number", String(filters.quoteNumber));
+      if (filters.staffId) params.set("staff_id", filters.staffId);
+      if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+      if (filters.dateTo) params.set("date_to", filters.dateTo);
+      if (filters.page) params.set("page", String(filters.page));
+      const qs = params.toString();
+      return jsonRequest<QuotationHistoryResponse>("GET", `/api/quotation/history${qs ? `?${qs}` : ""}`);
+    },
+    downloadDocxUrl: (id: string) => `/api/quotation/history/${id}/download/docx`,
+    downloadPdfUrl: (id: string) => `/api/quotation/history/${id}/download/pdf`,
   },
   auth: {
     login: (username: string, password: string) => jsonRequest<{ ok: true }>("POST", "/api/auth/login", { username, password }),
