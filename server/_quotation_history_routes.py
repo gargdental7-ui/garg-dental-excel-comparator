@@ -5,9 +5,10 @@ client-side), same pattern as _master_excel_routes.py's admin-only
 endpoints."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
+from _audit import log_action
 from _auth import CurrentUser, require_auth
 from _db import get_connection
 from _errors import handle_app_errors
@@ -99,7 +100,7 @@ def list_history(
     }
 
 
-def _fetch_quotation_for_download(quotation_id: str, company_id: Optional[str], current_user: CurrentUser) -> dict:
+def _fetch_quotation_for_download(quotation_id: str, company_id: Optional[str], current_user: CurrentUser) -> tuple[dict, str]:
     scope = resolve_company_scope(current_user, company_id)
     with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
@@ -116,15 +117,18 @@ def _fetch_quotation_for_download(quotation_id: str, company_id: Optional[str], 
     # or reusing a quotation_id from elsewhere.
     if current_user.role != "super_admin" and str(row["created_by"]) != current_user.id:
         raise HTTPException(status_code=403, detail={"message": "You can only download your own quotations."})
-    return row
+    return row, scope
 
 
 @router.get("/{quotation_id}/download/docx")
 @handle_app_errors
-def download_docx(quotation_id: str, company_id: Optional[str] = None, current_user: CurrentUser = Depends(require_auth)):
-    row = _fetch_quotation_for_download(quotation_id, company_id, current_user)
+def download_docx(
+    quotation_id: str, request: Request, company_id: Optional[str] = None, current_user: CurrentUser = Depends(require_auth)
+):
+    row, scope = _fetch_quotation_for_download(quotation_id, company_id, current_user)
     content = storage_download("quotations-docx", row["docx_storage_path"])
     filename = f"Quote-{row['quote_number']:04d}-{row['customer_name']}.docx"
+    log_action(current_user, scope, "download_quotation", "quotation", str(row["id"]), request, {"format": "docx"})
     return Response(
         content=content,
         media_type=DOCX_MEDIA_TYPE,
@@ -134,12 +138,15 @@ def download_docx(quotation_id: str, company_id: Optional[str] = None, current_u
 
 @router.get("/{quotation_id}/download/pdf")
 @handle_app_errors
-def download_pdf(quotation_id: str, company_id: Optional[str] = None, current_user: CurrentUser = Depends(require_auth)):
-    row = _fetch_quotation_for_download(quotation_id, company_id, current_user)
+def download_pdf(
+    quotation_id: str, request: Request, company_id: Optional[str] = None, current_user: CurrentUser = Depends(require_auth)
+):
+    row, scope = _fetch_quotation_for_download(quotation_id, company_id, current_user)
     if row["pdf_storage_path"] is None:
         raise HTTPException(status_code=404, detail={"message": "No PDF was saved for this quotation."})
     content = storage_download("quotations-pdf", row["pdf_storage_path"])
     filename = f"Quote-{row['quote_number']:04d}-{row['customer_name']}.pdf"
+    log_action(current_user, scope, "download_quotation", "quotation", str(row["id"]), request, {"format": "pdf"})
     return Response(
         content=content,
         media_type=PDF_MEDIA_TYPE,

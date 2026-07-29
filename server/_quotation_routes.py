@@ -19,11 +19,11 @@ from pydantic import BaseModel
 
 from _audit import log_action
 from _auth import CurrentUser, require_auth
-from _company_assets_routes import fetch_company_logo_bytes, fetch_company_template_bytes
+from _company_assets_routes import fetch_company_logo_bytes, fetch_company_template_bytes, fetch_template_version
 from _db import get_connection
 from _errors import handle_app_errors
 from _excel_loading import open_workbook
-from _master_excel_routes import fetch_master_excel_bytes
+from _master_excel_routes import fetch_master_excel_bytes, fetch_master_excel_version
 from _mapping_heuristics import PRODUCT_CANDIDATES, suggest_mapping
 from _pdf_conversion import convert_docx_to_pdf
 from _serialization import mapping_kwargs
@@ -218,7 +218,14 @@ class GenerateQuotationRequest(BaseModel):
 
 
 def _persist_quotation(
-    current_user: CurrentUser, company_id: str, customer: QuotationCustomer, docx_bytes: bytes, request: Request
+    current_user: CurrentUser,
+    company_id: str,
+    customer: QuotationCustomer,
+    docx_bytes: bytes,
+    request: Request,
+    signature_id: Optional[str] = None,
+    template_version: Optional[int] = None,
+    master_excel_version: Optional[int] = None,
 ) -> None:
     """Best-effort save of the just-rendered quotation (DOCX always, PDF
     when conversion succeeds) to Storage + DB. Deliberately never raises -
@@ -259,8 +266,9 @@ def _persist_quotation(
             with conn.cursor() as cur:
                 cur.execute(
                     "insert into quotations "
-                    "(company_id, quote_number, customer_name, created_by, status, docx_storage_path, pdf_storage_path) "
-                    "values (%s, %s, %s, %s, %s, %s, %s) returning id",
+                    "(company_id, quote_number, customer_name, created_by, status, docx_storage_path, pdf_storage_path, "
+                    "signature_id, template_version, master_excel_version) "
+                    "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
                     (
                         company_id,
                         quote_number,
@@ -269,6 +277,9 @@ def _persist_quotation(
                         "final" if pdf_bytes else "pdf_pending",
                         docx_path,
                         pdf_path,
+                        signature_id,
+                        template_version,
+                        master_excel_version,
                     ),
                 )
                 quotation_id = cur.fetchone()["id"]
@@ -311,7 +322,16 @@ def generate(payload: GenerateQuotationRequest, request: Request, current_user: 
     content = render_quotation_docx(company, customer, proposal, items, totals, template_bytes, logo_bytes, signature)
     filename = default_output_filename(company, customer, proposal)
 
-    _persist_quotation(current_user, scope, customer, content, request)
+    _persist_quotation(
+        current_user,
+        scope,
+        customer,
+        content,
+        request,
+        signature_id=payload.signature_id if signature else None,
+        template_version=fetch_template_version(current_user, scope),
+        master_excel_version=fetch_master_excel_version(current_user, scope),
+    )
 
     return Response(
         content=content,

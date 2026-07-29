@@ -44,12 +44,21 @@ def _fetch_template_row(current_user: CurrentUser, scope: str):
     with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select t.storage_path, t.original_filename, t.uploaded_at, t.file_size, u.full_name as uploaded_by_name "
+                "select t.storage_path, t.original_filename, t.uploaded_at, t.file_size, t.version, "
+                "u.full_name as uploaded_by_name "
                 "from quotation_templates t join users u on u.id = t.uploaded_by "
                 "where t.company_id = %s",
                 (scope,),
             )
             return cur.fetchone()
+
+
+def fetch_template_version(current_user: CurrentUser, company_id: str) -> Optional[int]:
+    """Used internally by _quotation_routes.py to record which template
+    version was active when a quotation was generated - not an HTTP
+    endpoint. None if no template has been uploaded yet."""
+    row = _fetch_template_row(current_user, company_id)
+    return row["version"] if row else None
 
 
 def fetch_company_template_bytes(current_user: CurrentUser, company_id: Optional[str] = None) -> Optional[bytes]:
@@ -107,7 +116,8 @@ def upload_template(
                 "values (%s, %s, %s, %s, %s) "
                 "on conflict (company_id) do update set "
                 "storage_path = excluded.storage_path, original_filename = excluded.original_filename, "
-                "uploaded_by = excluded.uploaded_by, file_size = excluded.file_size, uploaded_at = now()",
+                "uploaded_by = excluded.uploaded_by, file_size = excluded.file_size, uploaded_at = now(), "
+                "version = quotation_templates.version + 1",
                 (scope, storage_path, filename, current_user.id, len(content)),
             )
     quotation_companies.invalidate_cache()

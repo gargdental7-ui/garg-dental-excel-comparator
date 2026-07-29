@@ -35,12 +35,21 @@ def _fetch_row(current_user: CurrentUser, scope: str):
     with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select m.storage_path, m.original_filename, m.uploaded_at, m.file_size, u.full_name as uploaded_by_name "
+                "select m.storage_path, m.original_filename, m.uploaded_at, m.file_size, m.version, "
+                "u.full_name as uploaded_by_name "
                 "from master_excel m join users u on u.id = m.uploaded_by "
                 "where m.company_id = %s",
                 (scope,),
             )
             return cur.fetchone()
+
+
+def fetch_master_excel_version(current_user: CurrentUser, company_id: str) -> Optional[int]:
+    """Used internally by _quotation_routes.py to record which master
+    Excel version was active when a quotation was generated - not an HTTP
+    endpoint. None if no master Excel has been uploaded yet."""
+    row = _fetch_row(current_user, company_id)
+    return row["version"] if row else None
 
 
 def fetch_master_excel_bytes(current_user: CurrentUser, company_id: Optional[str] = None) -> bytes:
@@ -96,7 +105,8 @@ def upload_master_excel(
                 "values (%s, %s, %s, %s, %s) "
                 "on conflict (company_id) do update set "
                 "storage_path = excluded.storage_path, original_filename = excluded.original_filename, "
-                "uploaded_by = excluded.uploaded_by, file_size = excluded.file_size, uploaded_at = now()",
+                "uploaded_by = excluded.uploaded_by, file_size = excluded.file_size, uploaded_at = now(), "
+                "version = master_excel.version + 1",
                 (scope, storage_path, filename, current_user.id, len(content)),
             )
     log_action(current_user, scope, "upload_master_excel", "master_excel", scope, request, {"filename": filename})

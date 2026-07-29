@@ -133,6 +133,8 @@ def test_generate_returns_docx_and_saves_final_status_when_pdf_succeeds(client, 
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
     monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
     monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
     monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
     monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
 
@@ -152,6 +154,8 @@ def test_generate_still_returns_docx_when_pdf_conversion_fails(client, monkeypat
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
     monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
     monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
 
     def raise_conversion_error(docx_bytes, filename):
         raise RuntimeError("CloudConvert is down")
@@ -173,6 +177,8 @@ def test_generate_still_returns_docx_when_persistence_entirely_fails(client, mon
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
     monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
     monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
 
     def raise_db_error(**kwargs):
         raise RuntimeError("DB is unreachable")
@@ -190,6 +196,8 @@ def test_generate_passes_resolved_signature_to_render(client, monkeypatch, fake_
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
     monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
     monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
     monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
     monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
 
@@ -207,12 +215,19 @@ def test_generate_passes_resolved_signature_to_render(client, monkeypatch, fake_
     assert res.status_code == 200
     assert captured == {"company_id": "company-1", "signature_id": "sig-1"}
 
+    insert_call = next(p for q, p in fake_db_state["executed"] if q.startswith("insert into quotations"))
+    assert insert_call[7] == "sig-1"  # signature_id
+    assert insert_call[8] == 1  # template_version
+    assert insert_call[9] is None  # master_excel_version
+
 
 def test_generate_without_signature_id_never_calls_signature_lookup(client, monkeypatch, fake_db_state):
     _login_as(client, monkeypatch, STAFF)
     monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
     monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
     monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
     monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
     monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
 
@@ -223,6 +238,9 @@ def test_generate_without_signature_id_never_calls_signature_lookup(client, monk
 
     res = client.post("/api/quotation/generate", json=VALID_PAYLOAD)
     assert res.status_code == 200
+
+    insert_call = next(p for q, p in fake_db_state["executed"] if q.startswith("insert into quotations"))
+    assert insert_call[7] is None  # signature_id
 
 
 def test_history_query_scopes_to_own_quotations_for_staff(monkeypatch):
@@ -239,6 +257,68 @@ def test_history_query_scopes_to_own_quotations_for_staff(monkeypatch):
     )
     executed_queries = " ".join(q for q, _ in state["executed"])
     assert "q.created_by = %s" in executed_queries
+
+
+class _FakeDownloadCursor:
+    def __init__(self, row):
+        self.row = row
+
+    def execute(self, query, params=None):
+        pass
+
+    def fetchone(self):
+        return self.row
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _FakeDownloadConnection:
+    def __init__(self, row):
+        self.row = row
+
+    def cursor(self):
+        return _FakeDownloadCursor(self.row)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_download_docx_logs_download_quotation_action(monkeypatch):
+    row = {
+        "id": "quote-1",
+        "customer_name": "Test Customer",
+        "quote_number": 1,
+        "created_by": STAFF.id,
+        "docx_storage_path": "path/to.docx",
+        "pdf_storage_path": None,
+    }
+    monkeypatch.setattr(_quotation_history_routes, "get_connection", lambda **kwargs: _FakeDownloadConnection(row))
+    monkeypatch.setattr(_quotation_history_routes, "resolve_company_scope", lambda current_user, requested: "company-1")
+    monkeypatch.setattr(_quotation_history_routes, "storage_download", lambda bucket, path: b"docx-bytes")
+
+    logged = {}
+
+    def fake_log_action(current_user, company_id, action, entity_type, entity_id, request, metadata=None):
+        logged.update(action=action, entity_type=entity_type, entity_id=entity_id, company_id=company_id)
+
+    monkeypatch.setattr(_quotation_history_routes, "log_action", fake_log_action)
+
+    class _FakeRequest:
+        headers = {}
+        client = None
+
+    _quotation_history_routes.download_docx.__wrapped__(
+        quotation_id="quote-1", request=_FakeRequest(), company_id="company-1", current_user=STAFF
+    )
+
+    assert logged == {"action": "download_quotation", "entity_type": "quotation", "entity_id": "quote-1", "company_id": "company-1"}
 
 
 def test_history_query_does_not_scope_by_created_by_for_super_admin_without_staff_filter(monkeypatch):
