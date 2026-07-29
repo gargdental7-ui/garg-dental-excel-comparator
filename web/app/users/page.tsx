@@ -7,6 +7,7 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { Button } from "@/components/Button";
 import { Table, type TableColumn } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
+import { Badge } from "@/components/ui/Badge";
 import { api } from "@/lib/apiClient";
 import { ApiError } from "@/lib/types";
 import type { CurrentUser, ManagedUser } from "@/lib/types";
@@ -185,7 +186,7 @@ export default function UsersPage() {
     {
       header: "Role",
       render: (u) => (
-        <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium capitalize">{u.role}</span>
+        <Badge>{u.role}</Badge>
       ),
     },
     {

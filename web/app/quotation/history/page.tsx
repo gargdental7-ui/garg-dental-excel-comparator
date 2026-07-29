@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Table, type TableColumn } from "@/components/ui/Table";
 import { Pagination } from "@/components/ui/Pagination";
+import { Badge } from "@/components/ui/Badge";
 import { api } from "@/lib/apiClient";
 import { ApiError } from "@/lib/types";
 import type { CurrentUser, QuotationHistoryEntry } from "@/lib/types";
@@ -61,13 +62,9 @@ export default function QuotationHistoryPage() {
       header: "Status",
       render: (q) =>
         q.status === "final" ? (
-          <span className="rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 px-2 py-0.5 text-xs font-medium">
-            Final
-          </span>
+          <Badge tone="success">Final</Badge>
         ) : (
-          <span className="rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400 px-2 py-0.5 text-xs font-medium">
-            PDF Pending
-          </span>
+          <Badge tone="warning">PDF Pending</Badge>
         ),
     },
     {

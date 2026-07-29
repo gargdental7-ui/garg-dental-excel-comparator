@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Activity, Clock } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { Badge } from "@/components/ui/Badge";
 import { api } from "@/lib/apiClient";
 import { ApiError } from "@/lib/types";
 import type { CurrentUser, StaffSummaryEntry } from "@/lib/types";
@@ -69,11 +70,7 @@ export default function ActivityDashboardPage() {
           >
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">{s.fullName}</h2>
-              {!s.active && (
-                <span className="rounded-full bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">
-                  Disabled
-                </span>
-              )}
+              {!s.active && <Badge>Disabled</Badge>}
             </div>
             <p className="mt-3 text-2xl font-bold text-brand-navy dark:text-brand-cyan">{s.quotesToday}</p>
             <p className="text-xs text-slate-500 dark:text-slate-400">Quotes Created Today</p>

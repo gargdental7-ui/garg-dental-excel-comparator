@@ -1,20 +1,47 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { GitCompare, Landmark, PackageSearch, FileText, LogOut } from "lucide-react";
+import {
+  GitCompare,
+  Landmark,
+  PackageSearch,
+  FileText,
+  LogOut,
+  History,
+  FileSpreadsheet,
+  Users as UsersIcon,
+  Activity,
+} from "lucide-react";
+import { api } from "@/lib/apiClient";
+import type { CurrentUser } from "@/lib/types";
 
-const LINKS = [
-  { href: "/comparator", label: "Excel Comparator", icon: GitCompare },
-  { href: "/collection", label: "Collection Analyzer", icon: Landmark },
-  { href: "/inventory", label: "Inventory Analyzer", icon: PackageSearch },
-  { href: "/quotation", label: "Smart Quotation Generator", icon: FileText },
+type Role = CurrentUser["role"];
+
+const LINKS: { href: string; label: string; icon: typeof GitCompare; roles: Role[] }[] = [
+  { href: "/comparator", label: "Excel Comparator", icon: GitCompare, roles: ["admin", "staff"] },
+  { href: "/collection", label: "Collection Analyzer", icon: Landmark, roles: ["admin", "staff"] },
+  { href: "/inventory", label: "Inventory Analyzer", icon: PackageSearch, roles: ["admin", "staff"] },
+  { href: "/quotation", label: "Smart Quotation Generator", icon: FileText, roles: ["admin", "staff"] },
+  { href: "/quotation/history", label: "Quotation History", icon: History, roles: ["admin", "staff"] },
+  { href: "/settings/master-excel", label: "Master Excel", icon: FileSpreadsheet, roles: ["admin"] },
+  { href: "/users", label: "Users", icon: UsersIcon, roles: ["admin"] },
+  { href: "/activity", label: "Activity Logs", icon: Activity, roles: ["admin"] },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [me, setMe] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    api.auth
+      .status()
+      .then((status) => setMe(status.user ?? null))
+      .catch(() => setMe(null));
+  }, []);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -23,6 +50,11 @@ export function Sidebar() {
   }
 
   if (pathname === "/login") return null;
+
+  // Before the current-user fetch resolves, show only the links every role
+  // can see - never flash admin-only items (Users, Master Excel, Activity
+  // Logs) to a staff account for the split second before `me` loads.
+  const visibleLinks = LINKS.filter((link) => link.roles.includes(me ? me.role : "staff"));
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 print:hidden">
@@ -35,7 +67,7 @@ export function Sidebar() {
       </Link>
 
       <nav className="flex-1 space-y-1 px-3 py-2">
-        {LINKS.map((link) => {
+        {visibleLinks.map((link) => {
           const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
           const Icon = link.icon;
           return (
