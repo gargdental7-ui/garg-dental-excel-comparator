@@ -37,16 +37,23 @@ def _get_pool() -> ConnectionPool:
     if _pool is None:
         # min_size=0 so a cold start (or a local dev process that never
         # touches the DB) doesn't pay for a connection nobody uses yet.
-        # connect_timeout keeps an unreachable DB failing fast (a few
-        # seconds) instead of hanging on the pool's default long wait -
-        # callers like app/quotation_companies.py's fallback path depend on
-        # failures surfacing quickly, not eventually.
+        # connect_timeout keeps a genuinely unreachable DB (refused/no
+        # route) failing fast rather than hanging on the pool's default
+        # long wait - app/quotation_companies.py's fallback path depends on
+        # that. 15s (not the original 5s) because a real but COLD
+        # cross-region connection (Vercel's default region vs. wherever the
+        # Supabase project lives) needs headroom for DNS + TCP + TLS +
+        # Postgres auth in one round trip - 5s was cutting off genuine
+        # first-connection attempts, not just actually-dead ones, and
+        # login() has no fallback path to catch that the way
+        # quotation_companies.py does, so failing fast there just meant
+        # failing wrongly.
         _pool = ConnectionPool(
             _database_url(),
             min_size=0,
             max_size=5,
             open=True,
-            kwargs={"row_factory": dict_row, "connect_timeout": 5},
+            kwargs={"row_factory": dict_row, "connect_timeout": 15},
         )
     return _pool
 
@@ -62,7 +69,7 @@ def get_connection(*, company_id: Optional[str] = None, user_id: Optional[str] =
     which needs to read `users` before any identity exists) can omit all
     three and rely on route-level checks instead."""
     pool = _get_pool()
-    with pool.connection(timeout=5) as conn:
+    with pool.connection(timeout=15) as conn:
         with conn.transaction():
             with conn.cursor() as cur:
                 cur.execute("select set_config('app.current_company_id', %s, true)", (company_id or "",))
@@ -82,7 +89,7 @@ def login_lookup_connection():
     get_connection(), which is what keeps this bypass auditable to one call
     site instead of becoming a general-purpose RLS escape hatch."""
     pool = _get_pool()
-    with pool.connection(timeout=5) as conn:
+    with pool.connection(timeout=15) as conn:
         with conn.transaction():
             with conn.cursor() as cur:
                 cur.execute("select set_config('app.is_login_lookup', 'true', true)")
