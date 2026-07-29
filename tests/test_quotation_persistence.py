@@ -16,16 +16,26 @@ from fastapi.testclient import TestClient
 
 os.environ.setdefault("SESSION_SECRET", "test-session-secret")
 
+from app.quotation_companies import CompanyProfile
+
 import _auth
 import _quotation_history_routes
 import _quotation_routes
 import index
 
-ADMIN = _auth.CurrentUser(id="admin-1", company_id="company-1", username="admin", full_name="Admin", role="admin", active=True)
+FAKE_COMPANY = CompanyProfile(
+    id="company-1",
+    slug="test-company",
+    display_name="Test Company",
+    template_filename="equipment_proposal_garg_dental.docx",
+)
+
+SUPER_ADMIN = _auth.CurrentUser(
+    id="super-1", company_id=None, username="admin", full_name="Admin", role="super_admin", active=True
+)
 STAFF = _auth.CurrentUser(id="staff-1", company_id="company-1", username="staff", full_name="Staff", role="staff", active=True)
 
 VALID_PAYLOAD = {
-    "company_id": "garg_dental",
     "customer": {"customer_name": "Test Customer"},
     "proposal": {"title": "Equipment Proposal"},
     "items": [{"product_name": "Autoclave", "price": 1000, "quantity": 1}],
@@ -48,6 +58,7 @@ def _login_as(client, monkeypatch, user):
             "full_name": user.full_name,
             "role": user.role,
             "active": user.active,
+            "company_active": True,
             "password_hash": "x",
         },
     )
@@ -111,6 +122,7 @@ def fake_db_state(monkeypatch):
 
 def test_generate_returns_docx_and_saves_final_status_when_pdf_succeeds(client, monkeypatch, fake_db_state):
     _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
     monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
     monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
 
@@ -127,6 +139,7 @@ def test_generate_returns_docx_and_saves_final_status_when_pdf_succeeds(client, 
 
 def test_generate_still_returns_docx_when_pdf_conversion_fails(client, monkeypatch, fake_db_state):
     _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
 
     def raise_conversion_error(docx_bytes, filename):
         raise RuntimeError("CloudConvert is down")
@@ -145,6 +158,7 @@ def test_generate_still_returns_docx_when_pdf_conversion_fails(client, monkeypat
 
 def test_generate_still_returns_docx_when_persistence_entirely_fails(client, monkeypatch):
     _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
 
     def raise_db_error(**kwargs):
         raise RuntimeError("DB is unreachable")
@@ -163,19 +177,28 @@ def test_history_query_scopes_to_own_quotations_for_staff(monkeypatch):
 
     # Directly exercise the route function rather than going through the
     # HTTP layer, since we only care about the SQL shape it builds.
+    # resolve_company_scope isn't mocked here because, for staff, the real
+    # function never touches the DB - it just returns current_user.company_id.
     _quotation_history_routes.list_history.__wrapped__(
-        customer=None, quote_number=None, staff_id=None, date_from=None, date_to=None, page=1, current_user=STAFF
+        company_id=None, customer=None, quote_number=None, staff_id=None, date_from=None, date_to=None, page=1,
+        current_user=STAFF,
     )
     executed_queries = " ".join(q for q, _ in state["executed"])
     assert "q.created_by = %s" in executed_queries
 
 
-def test_history_query_does_not_scope_by_created_by_for_admin_without_staff_filter(monkeypatch):
+def test_history_query_does_not_scope_by_created_by_for_super_admin_without_staff_filter(monkeypatch):
     state = {"executed": [], "counter": 0}
     monkeypatch.setattr(_quotation_history_routes, "get_connection", lambda **kwargs: _RecordingConnection(state))
+    # Unlike staff, a super_admin's resolve_company_scope call does hit the
+    # DB to validate the company - mocked here since this test is about the
+    # created_by scoping decision, not tenancy resolution (which has its
+    # own dedicated tests).
+    monkeypatch.setattr(_quotation_history_routes, "resolve_company_scope", lambda current_user, requested: "company-1")
 
     _quotation_history_routes.list_history.__wrapped__(
-        customer=None, quote_number=None, staff_id=None, date_from=None, date_to=None, page=1, current_user=ADMIN
+        company_id="company-1", customer=None, quote_number=None, staff_id=None, date_from=None, date_to=None, page=1,
+        current_user=SUPER_ADMIN,
     )
     executed_queries = " ".join(q for q, _ in state["executed"])
     assert "q.created_by = %s" not in executed_queries

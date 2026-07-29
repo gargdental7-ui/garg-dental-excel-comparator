@@ -6,9 +6,11 @@ import { Activity, Clock } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Badge } from "@/components/ui/Badge";
+import { CompanySelector } from "@/components/CompanySelector";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import { api } from "@/lib/apiClient";
 import { ApiError } from "@/lib/types";
-import type { CurrentUser, StaffSummaryEntry } from "@/lib/types";
+import type { StaffSummaryEntry } from "@/lib/types";
 
 function formatLastActive(iso: string | null): string {
   if (!iso) return "Never";
@@ -21,39 +23,45 @@ function formatLastActive(iso: string | null): string {
 }
 
 export default function ActivityDashboardPage() {
-  const [me, setMe] = useState<CurrentUser | null | undefined>(undefined);
+  const me = useCurrentUser();
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffSummaryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.auth
-      .status()
-      .then((status) => setMe(status.user ?? null))
-      .catch(() => setMe(null));
-  }, []);
-
-  useEffect(() => {
-    if (me?.role !== "admin") return;
+    if (me?.role !== "super_admin" || !companyId) return;
+    let cancelled = false;
     api.audit
-      .staffSummary()
-      .then((res) => setStaff(res.staff))
-      .catch((err) => setError(err instanceof ApiError ? err.detail.message : "Could not load staff activity."));
-  }, [me]);
+      .staffSummary(companyId)
+      .then((res) => {
+        if (!cancelled) setStaff(res.staff);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.detail.message : "Could not load staff activity.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [me, companyId]);
 
   if (me === undefined) return null;
 
-  if (me === null || me.role !== "admin") {
+  if (me === null || me.role !== "super_admin") {
     return (
       <div className="mx-auto max-w-3xl p-6">
-        <PageHeader icon={Activity} title="Staff Activity" description="See what your team has been up to." />
-        <ErrorBanner message="You need admin access to view this page." />
+        <PageHeader icon={Activity} title="Staff Activity" description="See what a company's team has been up to." />
+        <ErrorBanner message="You need Super Admin access to view this page." />
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <PageHeader icon={Activity} title="Staff Activity" description="See what your team has been up to." />
+      <PageHeader icon={Activity} title="Staff Activity" description="See what a company's team has been up to." />
+
+      <div className="mb-4">
+        <CompanySelector value={companyId} onChange={setCompanyId} />
+      </div>
 
       {error && (
         <div className="mb-4">
@@ -65,7 +73,7 @@ export default function ActivityDashboardPage() {
         {staff.map((s) => (
           <Link
             key={s.id}
-            href={`/activity/${s.id}`}
+            href={`/activity/${s.id}?company_id=${companyId}`}
             className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md"
           >
             <div className="flex items-center justify-between">

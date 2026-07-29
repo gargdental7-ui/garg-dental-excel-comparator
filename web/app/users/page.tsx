@@ -8,15 +8,24 @@ import { Button } from "@/components/Button";
 import { Table, type TableColumn } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
+import { CompanySelector } from "@/components/CompanySelector";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import { api } from "@/lib/apiClient";
 import { ApiError } from "@/lib/types";
-import type { CurrentUser, ManagedUser } from "@/lib/types";
+import type { ManagedUser } from "@/lib/types";
 
-function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: (user: ManagedUser) => void }) {
+function CreateUserModal({
+  companyId,
+  onClose,
+  onCreated,
+}: {
+  companyId: string;
+  onClose: () => void;
+  onCreated: (user: ManagedUser) => void;
+}) {
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"admin" | "staff">("staff");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,7 +34,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
     setSubmitting(true);
     setError(null);
     try {
-      const user = await api.users.create({ username, full_name: fullName, password, role });
+      const user = await api.users.create({ company_id: companyId, username, full_name: fullName, password });
       onCreated(user);
       onClose();
     } catch (err) {
@@ -57,12 +66,6 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
           className={inputClass}
         />
 
-        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Role</label>
-        <select value={role} onChange={(e) => setRole(e.target.value as "admin" | "staff")} className={inputClass}>
-          <option value="staff">Staff</option>
-          <option value="admin">Admin</option>
-        </select>
-
         {error && <ErrorBanner message={error} />}
 
         <div className="mt-4 flex justify-end gap-2">
@@ -78,7 +81,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
   );
 }
 
-function ResetPasswordModal({ user, onClose }: { user: ManagedUser; onClose: () => void }) {
+function ResetPasswordModal({ user, companyId, onClose }: { user: ManagedUser; companyId: string; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -89,7 +92,7 @@ function ResetPasswordModal({ user, onClose }: { user: ManagedUser; onClose: () 
     setSubmitting(true);
     setError(null);
     try {
-      await api.users.resetPassword(user.id, password);
+      await api.users.resetPassword(user.id, companyId, password);
       setSuccess(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "Could not reset the password.");
@@ -129,30 +132,33 @@ function ResetPasswordModal({ user, onClose }: { user: ManagedUser; onClose: () 
 }
 
 export default function UsersPage() {
-  const [me, setMe] = useState<CurrentUser | null | undefined>(undefined);
+  const me = useCurrentUser();
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [resetTarget, setResetTarget] = useState<ManagedUser | null>(null);
 
   useEffect(() => {
-    api.auth
-      .status()
-      .then((status) => setMe(status.user ?? null))
-      .catch(() => setMe(null));
-  }, []);
-
-  useEffect(() => {
-    if (me?.role !== "admin") return;
+    if (me?.role !== "super_admin" || !companyId) return;
+    let cancelled = false;
     api.users
-      .list()
-      .then((res) => setUsers(res.users))
-      .catch((err) => setError(err instanceof ApiError ? err.detail.message : "Could not load users."));
-  }, [me]);
+      .list(companyId)
+      .then((res) => {
+        if (!cancelled) setUsers(res.users);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.detail.message : "Could not load users.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [me, companyId]);
 
   async function toggleActive(user: ManagedUser) {
+    if (!companyId) return;
     try {
-      const updated = await api.users.update(user.id, { active: !user.active });
+      const updated = await api.users.update(user.id, { company_id: companyId, active: !user.active });
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "Could not update the user.");
@@ -160,9 +166,10 @@ export default function UsersPage() {
   }
 
   async function removeUser(user: ManagedUser) {
+    if (!companyId) return;
     if (!confirm(`Delete ${user.fullName}? This cannot be undone.`)) return;
     try {
-      await api.users.remove(user.id);
+      await api.users.remove(user.id, companyId);
       setUsers((prev) => prev.filter((u) => u.id !== user.id));
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "Could not delete the user.");
@@ -171,11 +178,11 @@ export default function UsersPage() {
 
   if (me === undefined) return null;
 
-  if (me === null || me.role !== "admin") {
+  if (me === null || me.role !== "super_admin") {
     return (
       <div className="mx-auto max-w-3xl p-6">
-        <PageHeader icon={UsersIcon} title="Users" description="Manage staff and admin accounts." />
-        <ErrorBanner message="You need admin access to view this page." />
+        <PageHeader icon={UsersIcon} title="Users" description="Manage staff accounts." />
+        <ErrorBanner message="You need Super Admin access to view this page." />
       </div>
     );
   }
@@ -185,9 +192,7 @@ export default function UsersPage() {
     { header: "Username", render: (u) => u.username },
     {
       header: "Role",
-      render: (u) => (
-        <Badge>{u.role}</Badge>
-      ),
+      render: (u) => <Badge>{u.role}</Badge>,
     },
     {
       header: "Status",
@@ -229,10 +234,13 @@ export default function UsersPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-6">
-      <PageHeader icon={UsersIcon} title="Users" description="Manage staff and admin accounts for your company." />
+      <PageHeader icon={UsersIcon} title="Users" description="Manage staff accounts for a company." />
 
-      <div className="mb-4 flex justify-end">
-        <Button onClick={() => setShowCreate(true)}>Add User</Button>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <CompanySelector value={companyId} onChange={setCompanyId} />
+        <Button onClick={() => setShowCreate(true)} disabled={!companyId}>
+          Add User
+        </Button>
       </div>
 
       {error && (
@@ -243,10 +251,16 @@ export default function UsersPage() {
 
       <Table columns={columns} rows={users} rowKey={(u) => u.id} emptyMessage="No users yet." />
 
-      {showCreate && (
-        <CreateUserModal onClose={() => setShowCreate(false)} onCreated={(u) => setUsers((prev) => [...prev, u])} />
+      {showCreate && companyId && (
+        <CreateUserModal
+          companyId={companyId}
+          onClose={() => setShowCreate(false)}
+          onCreated={(u) => setUsers((prev) => [...prev, u])}
+        />
       )}
-      {resetTarget && <ResetPasswordModal user={resetTarget} onClose={() => setResetTarget(null)} />}
+      {resetTarget && companyId && (
+        <ResetPasswordModal user={resetTarget} companyId={companyId} onClose={() => setResetTarget(null)} />
+      )}
     </div>
   );
 }

@@ -103,3 +103,13 @@ class NoMasterExcelError(AppError):
 class MissingUploadedFileError(AppError):
     def __init__(self):
         super().__init__("Please choose an Excel file to upload.")
+
+
+class CompanyDataUnavailableError(AppError):
+    def __init__(self):
+        super().__init__("Company data is temporarily unavailable. Please try again shortly.")
+
+
+class NoQuotationTemplateError(AppError):
+    def __init__(self, company_display_name: str):
+        super().__init__(f"{company_display_name} has no quotation template uploaded yet.")

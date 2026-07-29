@@ -17,6 +17,7 @@ from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage
 from PIL import Image, UnidentifiedImageError
 
+from .exceptions import NoQuotationTemplateError
 from .quotation import ItemTotal, compute_item_total
 from .quotation_companies import CompanyProfile
 
@@ -92,6 +93,8 @@ def _build_item_context(tpl, item):
 
 
 def render_quotation_docx(company: CompanyProfile, customer, proposal, items, totals) -> bytes:
+    if company.template_path is None:
+        raise NoQuotationTemplateError(company.display_name)
     tpl = DocxTemplate(str(company.template_path))
 
     context = {

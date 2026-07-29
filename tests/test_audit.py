@@ -59,7 +59,7 @@ def test_log_action_writes_expected_row(monkeypatch):
     state = []
     monkeypatch.setattr(_audit, "get_connection", lambda **kwargs: _RecordingConnection(state))
 
-    _audit.log_action(USER, "create_quotation", "quotation", "quote-1", _FakeRequest(), {"quote_number": 5})
+    _audit.log_action(USER, USER.company_id, "create_quotation", "quotation", "quote-1", _FakeRequest(), {"quote_number": 5})
 
     assert len(state) == 1
     query, params = state[0]
@@ -76,7 +76,7 @@ def test_log_action_uses_x_forwarded_for_when_present(monkeypatch):
     monkeypatch.setattr(_audit, "get_connection", lambda **kwargs: _RecordingConnection(state))
 
     request = _FakeRequest(headers={"x-forwarded-for": "203.0.113.5, 10.0.0.1"})
-    _audit.log_action(USER, "login", "user", USER.id, request)
+    _audit.log_action(USER, USER.company_id, "login", "user", USER.id, request)
 
     _, params = state[0]
     assert params[5] == "203.0.113.5"
@@ -90,4 +90,4 @@ def test_log_action_never_raises_when_db_fails(monkeypatch):
 
     # Must not raise - a broken audit write must never break the caller's
     # already-succeeded primary action.
-    _audit.log_action(USER, "login", "user", USER.id, _FakeRequest())
+    _audit.log_action(USER, USER.company_id, "login", "user", USER.id, _FakeRequest())

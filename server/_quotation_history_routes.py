@@ -1,7 +1,8 @@
-"""Quotation history: admin can search/filter across the whole company;
-staff can only see quotations they created themselves - enforced in the SQL
-WHERE clause (not just hidden client-side), same pattern as
-_master_excel_routes.py's admin-only endpoints."""
+"""Quotation history: Super Admin can search/filter across whichever
+company they specify; staff can only see quotations they created
+themselves - enforced in the SQL WHERE clause (not just hidden
+client-side), same pattern as _master_excel_routes.py's admin-only
+endpoints."""
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ from _auth import CurrentUser, require_auth
 from _db import get_connection
 from _errors import handle_app_errors
 from _storage import download as storage_download
+from _tenancy import resolve_company_scope
 
 router = APIRouter(prefix="/api/quotation/history", tags=["quotation-history"])
 
@@ -34,6 +36,7 @@ def _row_out(row: dict) -> dict:
 @router.get("")
 @handle_app_errors
 def list_history(
+    company_id: Optional[str] = None,
     customer: Optional[str] = None,
     quote_number: Optional[int] = None,
     staff_id: Optional[str] = None,
@@ -42,13 +45,14 @@ def list_history(
     page: int = 1,
     current_user: CurrentUser = Depends(require_auth),
 ):
+    scope = resolve_company_scope(current_user, company_id)
     conditions = ["q.company_id = %s"]
-    params: list = [current_user.company_id]
+    params: list = [scope]
 
     # Staff can only ever see their own quotations - the request's own
     # identity decides this, never a client-supplied filter, so a staff
     # user can't pass a different staff_id to see someone else's history.
-    if current_user.role != "admin":
+    if current_user.role != "super_admin":
         conditions.append("q.created_by = %s")
         params.append(current_user.id)
     elif staff_id:
@@ -71,9 +75,7 @@ def list_history(
     where_clause = " and ".join(conditions)
     offset = max(page - 1, 0) * PAGE_SIZE
 
-    with get_connection(
-        company_id=current_user.company_id, user_id=current_user.id, role=current_user.role
-    ) as conn:
+    with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(f"select count(*) as total from quotations q where {where_clause}", params)
             total = cur.fetchone()["total"]
@@ -97,15 +99,14 @@ def list_history(
     }
 
 
-def _fetch_quotation_for_download(quotation_id: str, current_user: CurrentUser) -> dict:
-    with get_connection(
-        company_id=current_user.company_id, user_id=current_user.id, role=current_user.role
-    ) as conn:
+def _fetch_quotation_for_download(quotation_id: str, company_id: Optional[str], current_user: CurrentUser) -> dict:
+    scope = resolve_company_scope(current_user, company_id)
+    with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "select id, customer_name, quote_number, created_by, docx_storage_path, pdf_storage_path "
                 "from quotations where company_id = %s and id = %s",
-                (current_user.company_id, quotation_id),
+                (scope, quotation_id),
             )
             row = cur.fetchone()
     if row is None:
@@ -113,15 +114,15 @@ def _fetch_quotation_for_download(quotation_id: str, current_user: CurrentUser) 
     # Re-checked here, not just filtered out of the list view - staff must
     # not be able to download another staff member's quotation by guessing
     # or reusing a quotation_id from elsewhere.
-    if current_user.role != "admin" and str(row["created_by"]) != current_user.id:
+    if current_user.role != "super_admin" and str(row["created_by"]) != current_user.id:
         raise HTTPException(status_code=403, detail={"message": "You can only download your own quotations."})
     return row
 
 
 @router.get("/{quotation_id}/download/docx")
 @handle_app_errors
-def download_docx(quotation_id: str, current_user: CurrentUser = Depends(require_auth)):
-    row = _fetch_quotation_for_download(quotation_id, current_user)
+def download_docx(quotation_id: str, company_id: Optional[str] = None, current_user: CurrentUser = Depends(require_auth)):
+    row = _fetch_quotation_for_download(quotation_id, company_id, current_user)
     content = storage_download("quotations-docx", row["docx_storage_path"])
     filename = f"Quote-{row['quote_number']:04d}-{row['customer_name']}.docx"
     return Response(
@@ -133,8 +134,8 @@ def download_docx(quotation_id: str, current_user: CurrentUser = Depends(require
 
 @router.get("/{quotation_id}/download/pdf")
 @handle_app_errors
-def download_pdf(quotation_id: str, current_user: CurrentUser = Depends(require_auth)):
-    row = _fetch_quotation_for_download(quotation_id, current_user)
+def download_pdf(quotation_id: str, company_id: Optional[str] = None, current_user: CurrentUser = Depends(require_auth)):
+    row = _fetch_quotation_for_download(quotation_id, company_id, current_user)
     if row["pdf_storage_path"] is None:
         raise HTTPException(status_code=404, detail={"message": "No PDF was saved for this quotation."})
     content = storage_download("quotations-pdf", row["pdf_storage_path"])

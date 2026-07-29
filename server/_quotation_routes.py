@@ -28,6 +28,7 @@ from _pdf_conversion import convert_docx_to_pdf
 from _serialization import mapping_kwargs
 from _storage import upload as storage_upload
 from _tempfiles import temp_download_path, temp_upload_path
+from _tenancy import resolve_company_scope
 
 logger = logging.getLogger("gargdental.quotation_persistence")
 
@@ -65,16 +66,16 @@ def _resolve_header_row(worksheet, header_row: Optional[int]):
 
 
 @contextmanager
-def _resolve_excel_path(file: Optional[UploadFile], excel_source: str, current_user: CurrentUser):
+def _resolve_excel_path(file: Optional[UploadFile], excel_source: str, current_user: CurrentUser, company_id: Optional[str]):
     """Feeds either a fresh upload or the company's stored Master Excel into
     the same temp-file-backed path every open_workbook() caller already
     expects - open_workbook/generic_excel/_mapping_heuristics need no
     changes at all for the Master Excel source, they never know which one
-    they got. current_user.company_id (not a client-supplied value) scopes
-    the master-excel lookup, so a request can't read another company's
-    file by passing a different company_id."""
+    they got. company_id goes through resolve_company_scope (staff can
+    never override their own company; super_admin must specify one), so a
+    request can't read another company's file by passing a different id."""
     if excel_source == "company_master":
-        content = fetch_master_excel_bytes(current_user)
+        content = fetch_master_excel_bytes(current_user, company_id)
         with temp_download_path(content) as path:
             yield path
     else:
@@ -89,11 +90,12 @@ def _resolve_excel_path(file: Optional[UploadFile], excel_source: str, current_u
 def inspect_products(
     file: Optional[UploadFile] = File(None),
     excel_source: str = Form("upload"),
+    company_id: Optional[str] = Form(None),
     sheet: Optional[str] = Form(None),
     header_row: Optional[int] = Form(None),
     current_user: CurrentUser = Depends(require_auth),
 ):
-    with _resolve_excel_path(file, excel_source, current_user) as path:
+    with _resolve_excel_path(file, excel_source, current_user, company_id) as path:
         workbook = open_workbook(path)
         sheet_names = workbook.sheetnames
         selected_sheet = sheet or sheet_names[0]
@@ -128,10 +130,11 @@ def import_products(
     mapping: str = Form(...),
     file: Optional[UploadFile] = File(None),
     excel_source: str = Form("upload"),
+    company_id: Optional[str] = Form(None),
     header_row: Optional[int] = Form(None),
     current_user: CurrentUser = Depends(require_auth),
 ):
-    with _resolve_excel_path(file, excel_source, current_user) as path:
+    with _resolve_excel_path(file, excel_source, current_user, company_id) as path:
         workbook = open_workbook(path)
         worksheet = workbook[sheet]
         # header_row is omitted only by callers that never fetched a
@@ -197,13 +200,20 @@ class QuotationItemIn(BaseModel):
 
 
 class GenerateQuotationRequest(BaseModel):
-    company_id: str = "garg_dental"
+    # Optional and resolved via resolve_company_scope: staff can never
+    # override their own company regardless of what's sent here, and
+    # super_admin must supply a real company UUID (not the old hardcoded
+    # "garg_dental" slug - see app/quotation_companies.py, which is now
+    # keyed by company UUID to match every other company-scoped table).
+    company_id: Optional[str] = None
     customer: QuotationCustomerIn
     proposal: QuotationProposalIn
     items: List[QuotationItemIn]
 
 
-def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, docx_bytes: bytes, request: Request) -> None:
+def _persist_quotation(
+    current_user: CurrentUser, company_id: str, customer: QuotationCustomer, docx_bytes: bytes, request: Request
+) -> None:
     """Best-effort save of the just-rendered quotation (DOCX always, PDF
     when conversion succeeds) to Storage + DB. Deliberately never raises -
     "existing functionality must keep working exactly as today" means a
@@ -221,18 +231,18 @@ def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, d
 
         now = datetime.now(timezone.utc)
         with get_connection(
-            company_id=current_user.company_id, user_id=current_user.id, role=current_user.role
+            company_id=company_id, user_id=current_user.id, role=current_user.role
         ) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "insert into quote_number_counters (company_id, next_number) values (%s, 2) "
                     "on conflict (company_id) do update set next_number = quote_number_counters.next_number + 1 "
                     "returning (next_number - 1) as quote_number",
-                    (current_user.company_id,),
+                    (company_id,),
                 )
                 quote_number = cur.fetchone()["quote_number"]
 
-            folder = f"{current_user.company_id}/Quotations/{now.year}/{now.month:02d}"
+            folder = f"{company_id}/Quotations/{now.year}/{now.month:02d}"
             docx_path = f"{folder}/Quote-{quote_number:04d}.docx"
             pdf_path = f"{folder}/Quote-{quote_number:04d}.pdf" if pdf_bytes else None
 
@@ -246,7 +256,7 @@ def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, d
                     "(company_id, quote_number, customer_name, created_by, status, docx_storage_path, pdf_storage_path) "
                     "values (%s, %s, %s, %s, %s, %s, %s) returning id",
                     (
-                        current_user.company_id,
+                        company_id,
                         quote_number,
                         customer.customer_name,
                         current_user.id,
@@ -267,7 +277,7 @@ def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, d
                         (quotation_id, pdf_path, len(pdf_bytes)),
                     )
         log_action(
-            current_user, "create_quotation", "quotation", str(quotation_id), request,
+            current_user, company_id, "create_quotation", "quotation", str(quotation_id), request,
             {"quote_number": quote_number, "customer_name": customer.customer_name},
         )
     except Exception:
@@ -277,7 +287,8 @@ def _persist_quotation(current_user: CurrentUser, customer: QuotationCustomer, d
 @router.post("/generate")
 @handle_app_errors
 def generate(payload: GenerateQuotationRequest, request: Request, current_user: CurrentUser = Depends(require_auth)):
-    company = get_company(payload.company_id)
+    scope = resolve_company_scope(current_user, payload.company_id)
+    company = get_company(scope)
     customer = QuotationCustomer(**payload.customer.model_dump())
     proposal = QuotationProposal(**payload.proposal.model_dump())
     items = [QuotationItem(**item.model_dump()) for item in payload.items]
@@ -287,7 +298,7 @@ def generate(payload: GenerateQuotationRequest, request: Request, current_user: 
     content = render_quotation_docx(company, customer, proposal, items, totals)
     filename = default_output_filename(customer, proposal)
 
-    _persist_quotation(current_user, customer, content, request)
+    _persist_quotation(current_user, scope, customer, content, request)
 
     return Response(
         content=content,

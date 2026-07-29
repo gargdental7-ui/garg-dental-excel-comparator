@@ -61,13 +61,21 @@ def _get_pool() -> ConnectionPool:
 @contextmanager
 def get_connection(*, company_id: Optional[str] = None, user_id: Optional[str] = None, role: Optional[str] = None):
     """Yields a connection, inside a transaction, with app.current_company_id
-    / app.current_user_id / app.current_role set for that transaction's
-    duration (SET LOCAL semantics via set_config's is_local=true, so it
-    automatically reverts when the transaction ends - never leaks across
-    pooled connection reuse). Pass whichever of company_id/user_id/role the caller
-    actually knows; routes that haven't resolved a user yet (e.g. login,
-    which needs to read `users` before any identity exists) can omit all
-    three and rely on route-level checks instead."""
+    / app.current_user_id / app.current_role / app.is_super_admin set for
+    that transaction's duration (SET LOCAL semantics via set_config's
+    is_local=true, so it automatically reverts when the transaction ends -
+    never leaks across pooled connection reuse). Pass whichever of
+    company_id/user_id/role the caller actually knows; routes that haven't
+    resolved a user yet (e.g. login, which needs to read `users` before
+    any identity exists) can omit all three and rely on route-level checks
+    instead.
+
+    is_super_admin is derived automatically from role=='super_admin' - no
+    call site needs to pass it explicitly. It's what lets a super_admin
+    (whose own company_id is always NULL, since they belong to no single
+    company) satisfy the company_isolation RLS policies on every table
+    without those policies needing to special-case a NULL company_id
+    match, which NULL = NULL comparisons in SQL wouldn't do anyway."""
     pool = _get_pool()
     with pool.connection(timeout=15) as conn:
         with conn.transaction():
@@ -75,6 +83,10 @@ def get_connection(*, company_id: Optional[str] = None, user_id: Optional[str] =
                 cur.execute("select set_config('app.current_company_id', %s, true)", (company_id or "",))
                 cur.execute("select set_config('app.current_user_id', %s, true)", (user_id or "",))
                 cur.execute("select set_config('app.current_role', %s, true)", (role or "",))
+                cur.execute(
+                    "select set_config('app.is_super_admin', %s, true)",
+                    ("true" if role == "super_admin" else "false",),
+                )
             yield conn
 
 

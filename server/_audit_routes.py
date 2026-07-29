@@ -1,12 +1,14 @@
-"""Admin-only audit log viewing and staff activity dashboard. Read-only -
-the actual log writes happen via _audit.py::log_action(), called from
-every mutating endpoint elsewhere (auth, users, master excel, quotation
+"""Super-Admin-only audit log viewing and staff activity dashboard,
+scoped to whichever company is specified in each request. Read-only - the
+actual log writes happen via _audit.py::log_action(), called from every
+mutating endpoint elsewhere (auth, users, master excel, quotation
 generation)."""
 from fastapi import APIRouter, Depends
 
-from _auth import CurrentUser, require_admin
+from _auth import CurrentUser, require_super_admin
 from _db import get_connection
 from _errors import handle_app_errors
+from _tenancy import resolve_company_scope
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
@@ -29,18 +31,22 @@ def _log_out(row: dict) -> dict:
 
 @router.get("/logs")
 @handle_app_errors
-def list_logs(page: int = 1, staff_id: str | None = None, current_user: CurrentUser = Depends(require_admin)):
+def list_logs(
+    company_id: str,
+    page: int = 1,
+    staff_id: str | None = None,
+    current_user: CurrentUser = Depends(require_super_admin),
+):
+    scope = resolve_company_scope(current_user, company_id)
     conditions = ["a.company_id = %s"]
-    params: list = [current_user.company_id]
+    params: list = [scope]
     if staff_id:
         conditions.append("a.user_id = %s")
         params.append(staff_id)
     where_clause = " and ".join(conditions)
     offset = max(page - 1, 0) * PAGE_SIZE
 
-    with get_connection(
-        company_id=current_user.company_id, user_id=current_user.id, role=current_user.role
-    ) as conn:
+    with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(f"select count(*) as total from audit_logs a where {where_clause}", params)
             total = cur.fetchone()["total"]
@@ -59,12 +65,11 @@ def list_logs(page: int = 1, staff_id: str | None = None, current_user: CurrentU
 
 @router.get("/staff-summary")
 @handle_app_errors
-def staff_summary(current_user: CurrentUser = Depends(require_admin)):
+def staff_summary(company_id: str, current_user: CurrentUser = Depends(require_super_admin)):
     """Per-staff cards for the activity dashboard: quotes created today and
     last-active timestamp (most recent audit log of any kind)."""
-    with get_connection(
-        company_id=current_user.company_id, user_id=current_user.id, role=current_user.role
-    ) as conn:
+    scope = resolve_company_scope(current_user, company_id)
+    with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "select u.id, u.full_name, u.role, u.active, "
@@ -72,7 +77,7 @@ def staff_summary(current_user: CurrentUser = Depends(require_admin)):
                 " and q.created_at >= date_trunc('day', now())) as quotes_today, "
                 "(select max(a.created_at) from audit_logs a where a.user_id = u.id) as last_active "
                 "from users u where u.company_id = %s order by u.full_name",
-                (current_user.company_id,),
+                (scope,),
             )
             rows = cur.fetchall()
 

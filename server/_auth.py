@@ -9,8 +9,9 @@ The cookie payload changed from `{issued_at}.{signature}` (proof of "some
 valid session exists") to `{issued_at}.{user_id}.{signature}` (proof of
 "this specific user's session exists"), so require_auth can resolve a real
 CurrentUser - id, role, company_id - that other routes depend on for
-authorization (require_admin) and data scoping (e.g. staff only seeing
-their own quotations). Existing callers that just did
+authorization (require_super_admin) and data scoping (e.g. staff only
+seeing their own quotations, resolved via _tenancy.py::resolve_company_scope).
+Existing callers that just did
 `dependencies=[Depends(require_auth)]` to gate a router need no changes:
 the guard-only contract (raises 401 if not logged in) is unchanged, only
 its internals and return value are new.
@@ -38,7 +39,7 @@ logger = logging.getLogger("gargdental.auth")
 @dataclass
 class CurrentUser:
     id: str
-    company_id: str
+    company_id: Optional[str]  # None for super_admin, who belongs to no single company
     username: str
     full_name: str
     role: str
@@ -84,7 +85,7 @@ def _parse_cookie(value: str) -> Optional[str]:
 def _row_to_user(row: dict) -> CurrentUser:
     return CurrentUser(
         id=str(row["id"]),
-        company_id=str(row["company_id"]),
+        company_id=str(row["company_id"]) if row["company_id"] is not None else None,
         username=row["username"],
         full_name=row["full_name"],
         role=row["role"],
@@ -92,19 +93,35 @@ def _row_to_user(row: dict) -> CurrentUser:
     )
 
 
+def _user_and_company_active(row: dict) -> bool:
+    """A staff member's company can be disabled (Super Admin action)
+    independently of the user's own `active` flag - either one blocks
+    login. super_admin rows have no company (company_active is None from
+    the left join), so only their own `active` flag matters."""
+    if not row["active"]:
+        return False
+    if row["company_id"] is not None and not row["company_active"]:
+        return False
+    return True
+
+
 def _load_user_by_id(user_id: str) -> Optional[CurrentUser]:
     try:
         with get_connection(user_id=user_id) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "select id, company_id, username, full_name, role, active from users where id = %s",
+                    "select u.id, u.company_id, u.username, u.full_name, u.role, u.active, c.active as company_active "
+                    "from users u left join companies c on c.id = u.company_id "
+                    "where u.id = %s",
                     (user_id,),
                 )
                 row = cur.fetchone()
     except Exception:
         logger.exception("Failed to load user %s", user_id)
         return None
-    return _row_to_user(row) if row else None
+    if row is None or not _user_and_company_active(row):
+        return None
+    return _row_to_user(row)
 
 
 def _load_user_for_login(username: str) -> Optional[dict]:
@@ -116,8 +133,10 @@ def _load_user_for_login(username: str) -> Optional[dict]:
         with login_lookup_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "select id, company_id, username, full_name, role, active, password_hash "
-                    "from users where username = %s",
+                    "select u.id, u.company_id, u.username, u.full_name, u.role, u.active, u.password_hash, "
+                    "c.active as company_active "
+                    "from users u left join companies c on c.id = u.company_id "
+                    "where u.username = %s",
                     (username,),
                 )
                 return cur.fetchone()
@@ -131,14 +150,14 @@ def require_auth(request: Request) -> CurrentUser:
     if user_id is None:
         raise HTTPException(status_code=401, detail={"message": "Please sign in."})
     user = _load_user_by_id(user_id)
-    if user is None or not user.active:
+    if user is None:
         raise HTTPException(status_code=401, detail={"message": "Please sign in."})
     return user
 
 
-def require_admin(current_user: CurrentUser = Depends(require_auth)) -> CurrentUser:
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail={"message": "Admin access required."})
+def require_super_admin(current_user: CurrentUser = Depends(require_auth)) -> CurrentUser:
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail={"message": "Super Admin access required."})
     return current_user
 
 
@@ -154,14 +173,15 @@ class LoginRequest(BaseModel):
 def login(payload: LoginRequest, request: Request, response: Response):
     row = _load_user_for_login(payload.username)
     generic_error = HTTPException(status_code=401, detail={"message": "Incorrect username or password."})
-    if row is None or not row["active"]:
+    if row is None or not _user_and_company_active(row):
         raise generic_error
     if not bcrypt.checkpw(payload.password.encode(), row["password_hash"].encode()):
         raise generic_error
 
     from _audit import log_action  # local import: see _audit.py's note on the _auth<->_audit cycle
 
-    log_action(_row_to_user(row), "login", "user", str(row["id"]), request)
+    company_id = str(row["company_id"]) if row["company_id"] is not None else None
+    log_action(_row_to_user(row), company_id, "login", "user", str(row["id"]), request)
 
     response.set_cookie(
         key=COOKIE_NAME,
@@ -187,7 +207,7 @@ def status(request: Request):
     if user_id is None:
         return {"authenticated": False}
     user = _load_user_by_id(user_id)
-    if user is None or not user.active:
+    if user is None:
         return {"authenticated": False}
     return {
         "authenticated": True,

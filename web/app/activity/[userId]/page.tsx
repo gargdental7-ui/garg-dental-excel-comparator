@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, History } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Pagination } from "@/components/ui/Pagination";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import { api } from "@/lib/apiClient";
 import { ApiError } from "@/lib/types";
-import type { AuditLogEntry, CurrentUser } from "@/lib/types";
+import type { AuditLogEntry } from "@/lib/types";
 
 const ACTION_LABELS: Record<string, string> = {
   login: "Logged In",
@@ -37,38 +38,57 @@ function describe(entry: AuditLogEntry): string {
 }
 
 export default function StaffActivityTimelinePage() {
+  return (
+    <Suspense fallback={null}>
+      <StaffActivityTimeline />
+    </Suspense>
+  );
+}
+
+function StaffActivityTimeline() {
   const params = useParams<{ userId: string }>();
-  const [me, setMe] = useState<CurrentUser | null | undefined>(undefined);
+  const searchParams = useSearchParams();
+  const companyId = searchParams.get("company_id");
+  const me = useCurrentUser();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.auth
-      .status()
-      .then((status) => setMe(status.user ?? null))
-      .catch(() => setMe(null));
-  }, []);
-
-  useEffect(() => {
-    if (me?.role !== "admin") return;
+    if (me?.role !== "super_admin" || !companyId) return;
+    let cancelled = false;
     api.audit
-      .logs(page, params.userId)
+      .logs(companyId, page, params.userId)
       .then((res) => {
+        if (cancelled) return;
         setLogs(res.logs);
         setTotal(res.total);
       })
-      .catch((err) => setError(err instanceof ApiError ? err.detail.message : "Could not load activity."));
-  }, [me, page, params.userId]);
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.detail.message : "Could not load activity.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [me, companyId, page, params.userId]);
 
   if (me === undefined) return null;
 
-  if (me === null || me.role !== "admin") {
+  if (me === null || me.role !== "super_admin") {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <PageHeader icon={History} title="Staff Activity" description="Activity timeline." />
-        <ErrorBanner message="You need admin access to view this page." />
+        <ErrorBanner message="You need Super Admin access to view this page." />
+      </div>
+    );
+  }
+
+  if (!companyId) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <PageHeader icon={History} title="Staff Activity" description="Activity timeline." />
+        <ErrorBanner message="Missing company - go back to Staff Activity and click a staff card." />
       </div>
     );
   }

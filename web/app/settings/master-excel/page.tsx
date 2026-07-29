@@ -6,9 +6,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { Button } from "@/components/Button";
 import { FileDropInput } from "@/components/FileDropInput";
+import { CompanySelector } from "@/components/CompanySelector";
+import { useCurrentUser } from "@/lib/useCurrentUser";
 import { api } from "@/lib/apiClient";
 import { ApiError } from "@/lib/types";
-import type { CurrentUser, MasterExcelMetadata } from "@/lib/types";
+import type { MasterExcelMetadata } from "@/lib/types";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -17,31 +19,34 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function MasterExcelSettingsPage() {
-  const [me, setMe] = useState<CurrentUser | null | undefined>(undefined);
+  const me = useCurrentUser();
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [meta, setMeta] = useState<MasterExcelMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.auth
-      .status()
-      .then((status) => setMe(status.user ?? null))
-      .catch(() => setMe(null));
-  }, []);
-
-  useEffect(() => {
-    if (me?.role !== "admin") return;
+    if (me?.role !== "super_admin" || !companyId) return;
+    let cancelled = false;
     api.masterExcel
-      .getMetadata()
-      .then(setMeta)
-      .catch((err) => setError(err instanceof ApiError ? err.detail.message : "Could not load master Excel status."));
-  }, [me]);
+      .getMetadata(companyId)
+      .then((res) => {
+        if (!cancelled) setMeta(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.detail.message : "Could not load master Excel status.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [me, companyId]);
 
   async function handleUpload(file: File) {
+    if (!companyId) return;
     setBusy(true);
     setError(null);
     try {
-      const updated = await api.masterExcel.upload(file);
+      const updated = await api.masterExcel.upload(file, companyId);
       setMeta(updated);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "Could not upload the file.");
@@ -51,11 +56,12 @@ export default function MasterExcelSettingsPage() {
   }
 
   async function handleDelete() {
+    if (!companyId) return;
     if (!confirm("Delete the Company Master Excel? Staff will no longer be able to use it for new quotations.")) return;
     setBusy(true);
     setError(null);
     try {
-      await api.masterExcel.remove();
+      await api.masterExcel.remove(companyId);
       setMeta({ exists: false });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail.message : "Could not delete the file.");
@@ -66,11 +72,11 @@ export default function MasterExcelSettingsPage() {
 
   if (me === undefined) return null;
 
-  if (me === null || me.role !== "admin") {
+  if (me === null || me.role !== "super_admin") {
     return (
       <div className="mx-auto max-w-2xl p-6">
-        <PageHeader icon={FileSpreadsheet} title="Master Excel Library" description="Manage the company-wide product Excel." />
-        <ErrorBanner message="You need admin access to view this page." />
+        <PageHeader icon={FileSpreadsheet} title="Master Excel Library" description="Manage a company's product Excel." />
+        <ErrorBanner message="You need Super Admin access to view this page." />
       </div>
     );
   }
@@ -80,8 +86,12 @@ export default function MasterExcelSettingsPage() {
       <PageHeader
         icon={FileSpreadsheet}
         title="Master Excel Library"
-        description="Upload one permanent product Excel that staff can reuse for every quotation without uploading it again."
+        description="Upload one permanent product Excel that a company's staff can reuse for every quotation without uploading it again."
       />
+
+      <div className="mb-4">
+        <CompanySelector value={companyId} onChange={setCompanyId} />
+      </div>
 
       {error && (
         <div className="mb-4">
@@ -102,7 +112,7 @@ export default function MasterExcelSettingsPage() {
             </div>
           </div>
           <div className="mt-3 flex gap-2">
-            <a href={api.masterExcel.downloadUrl}>
+            <a href={api.masterExcel.downloadUrl(companyId!)}>
               <Button variant="secondary">Download</Button>
             </a>
             <Button variant="danger" onClick={handleDelete} disabled={busy}>
@@ -112,11 +122,13 @@ export default function MasterExcelSettingsPage() {
         </div>
       )}
 
-      <FileDropInput
-        label={meta?.exists ? "Replace Master Excel" : "Upload Master Excel"}
-        fileName={null}
-        onChange={handleUpload}
-      />
+      {companyId && (
+        <FileDropInput
+          label={meta?.exists ? "Replace Master Excel" : "Upload Master Excel"}
+          fileName={null}
+          onChange={handleUpload}
+        />
+      )}
       {busy && <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Working...</p>}
     </div>
   );

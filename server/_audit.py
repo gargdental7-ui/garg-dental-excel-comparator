@@ -22,6 +22,7 @@ logger = logging.getLogger("gargdental.audit")
 
 def log_action(
     current_user: "CurrentUser",
+    company_id: str | None,
     action: str,
     entity_type: str,
     entity_id: str | None,
@@ -32,14 +33,19 @@ def log_action(
     logging (same resilience principle as _quotation_routes.py's
     _persist_quotation: the primary action already succeeded by the time
     this is called, so a broken audit write shouldn't turn that into a
-    500)."""
+    500).
+
+    company_id is the company the action *affected*, always resolved via
+    _tenancy.py::resolve_company_scope at the call site - deliberately not
+    current_user.company_id, which is NULL for a super_admin and would
+    otherwise log every cross-company action under no company at all."""
     try:
         ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
             request.client.host if request.client else None
         )
         user_agent = request.headers.get("user-agent")
         with get_connection(
-            company_id=current_user.company_id, user_id=current_user.id, role=current_user.role
+            company_id=company_id, user_id=current_user.id, role=current_user.role
         ) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -47,7 +53,7 @@ def log_action(
                     "(company_id, user_id, action, entity_type, entity_id, ip_address, user_agent, metadata) "
                     "values (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
-                        current_user.company_id,
+                        company_id,
                         current_user.id,
                         action,
                         entity_type,

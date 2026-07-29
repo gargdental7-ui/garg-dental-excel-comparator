@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -14,34 +13,27 @@ import {
   FileSpreadsheet,
   Users as UsersIcon,
   Activity,
+  Building2,
 } from "lucide-react";
-import { api } from "@/lib/apiClient";
-import type { CurrentUser } from "@/lib/types";
-
-type Role = CurrentUser["role"];
+import { useCurrentUser } from "@/lib/useCurrentUser";
+import type { Role } from "@/lib/types";
 
 const LINKS: { href: string; label: string; icon: typeof GitCompare; roles: Role[] }[] = [
-  { href: "/comparator", label: "Excel Comparator", icon: GitCompare, roles: ["admin", "staff"] },
-  { href: "/collection", label: "Collection Analyzer", icon: Landmark, roles: ["admin", "staff"] },
-  { href: "/inventory", label: "Inventory Analyzer", icon: PackageSearch, roles: ["admin", "staff"] },
-  { href: "/quotation", label: "Smart Quotation Generator", icon: FileText, roles: ["admin", "staff"] },
-  { href: "/quotation/history", label: "Quotation History", icon: History, roles: ["admin", "staff"] },
-  { href: "/settings/master-excel", label: "Master Excel", icon: FileSpreadsheet, roles: ["admin"] },
-  { href: "/users", label: "Users", icon: UsersIcon, roles: ["admin"] },
-  { href: "/activity", label: "Activity Logs", icon: Activity, roles: ["admin"] },
+  { href: "/comparator", label: "Excel Comparator", icon: GitCompare, roles: ["super_admin", "staff"] },
+  { href: "/collection", label: "Collection Analyzer", icon: Landmark, roles: ["super_admin", "staff"] },
+  { href: "/inventory", label: "Inventory Analyzer", icon: PackageSearch, roles: ["super_admin", "staff"] },
+  { href: "/quotation", label: "Smart Quotation Generator", icon: FileText, roles: ["super_admin", "staff"] },
+  { href: "/quotation/history", label: "Quotation History", icon: History, roles: ["super_admin", "staff"] },
+  { href: "/companies", label: "Companies", icon: Building2, roles: ["super_admin"] },
+  { href: "/settings/master-excel", label: "Master Excel", icon: FileSpreadsheet, roles: ["super_admin"] },
+  { href: "/users", label: "Users", icon: UsersIcon, roles: ["super_admin"] },
+  { href: "/activity", label: "Activity Logs", icon: Activity, roles: ["super_admin"] },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [me, setMe] = useState<CurrentUser | null>(null);
-
-  useEffect(() => {
-    api.auth
-      .status()
-      .then((status) => setMe(status.user ?? null))
-      .catch(() => setMe(null));
-  }, []);
+  const me = useCurrentUser();
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });

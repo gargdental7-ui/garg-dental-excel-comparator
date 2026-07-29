@@ -6,8 +6,10 @@ import {
   type CollectionAnalyzeResponse,
   type CollectionInspectResponse,
   type ColumnMappingPair,
+  type Company,
   type ComparatorAnalyzeResult,
   type ComparatorInspectResponse,
+  type CreateCompanyRequest,
   type CreateUserRequest,
   type ExcelSource,
   type GenerateQuotationRequest,
@@ -21,6 +23,7 @@ import {
   type QuotationProductsImportResponse,
   type QuotationProductsInspectResponse,
   type StaffSummaryEntry,
+  type UpdateCompanyRequest,
   type UpdateUserRequest,
 } from "./types";
 
@@ -206,20 +209,24 @@ export const api = {
     generate: (payload: GenerateQuotationRequest) => postJsonForBlob(`/api/quotation/generate`, payload),
   },
   masterExcel: {
-    getMetadata: () => jsonRequest<MasterExcelMetadata>("GET", "/api/master-excel"),
-    upload: async (file: File): Promise<MasterExcelMetadata> => {
+    getMetadata: (companyId?: string) => {
+      const qs = companyId ? `?company_id=${encodeURIComponent(companyId)}` : "";
+      return jsonRequest<MasterExcelMetadata>("GET", `/api/master-excel${qs}`);
+    },
+    upload: async (file: File, companyId: string): Promise<MasterExcelMetadata> => {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/master-excel", { method: "PUT", body: form });
+      const res = await fetch(`/api/master-excel?company_id=${encodeURIComponent(companyId)}`, { method: "PUT", body: form });
       if (!res.ok) throw new ApiError(res.status, await readErrorDetail(res));
       return res.json() as Promise<MasterExcelMetadata>;
     },
-    remove: () => jsonRequest<{ ok: true }>("DELETE", "/api/master-excel"),
-    downloadUrl: "/api/master-excel/download",
+    remove: (companyId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/master-excel?company_id=${encodeURIComponent(companyId)}`),
+    downloadUrl: (companyId: string) => `/api/master-excel/download?company_id=${encodeURIComponent(companyId)}`,
   },
   quotationHistory: {
     list: (filters: QuotationHistoryFilters = {}) => {
       const params = new URLSearchParams();
+      if (filters.companyId) params.set("company_id", filters.companyId);
       if (filters.customer) params.set("customer", filters.customer);
       if (filters.quoteNumber != null) params.set("quote_number", String(filters.quoteNumber));
       if (filters.staffId) params.set("staff_id", filters.staffId);
@@ -229,13 +236,16 @@ export const api = {
       const qs = params.toString();
       return jsonRequest<QuotationHistoryResponse>("GET", `/api/quotation/history${qs ? `?${qs}` : ""}`);
     },
-    downloadDocxUrl: (id: string) => `/api/quotation/history/${id}/download/docx`,
-    downloadPdfUrl: (id: string) => `/api/quotation/history/${id}/download/pdf`,
+    downloadDocxUrl: (id: string, companyId?: string) =>
+      `/api/quotation/history/${id}/download/docx${companyId ? `?company_id=${encodeURIComponent(companyId)}` : ""}`,
+    downloadPdfUrl: (id: string, companyId?: string) =>
+      `/api/quotation/history/${id}/download/pdf${companyId ? `?company_id=${encodeURIComponent(companyId)}` : ""}`,
   },
   audit: {
-    staffSummary: () => jsonRequest<{ staff: StaffSummaryEntry[] }>("GET", "/api/audit/staff-summary"),
-    logs: (page: number = 1, staffId?: string) => {
-      const params = new URLSearchParams({ page: String(page) });
+    staffSummary: (companyId: string) =>
+      jsonRequest<{ staff: StaffSummaryEntry[] }>("GET", `/api/audit/staff-summary?company_id=${encodeURIComponent(companyId)}`),
+    logs: (companyId: string, page: number = 1, staffId?: string) => {
+      const params = new URLSearchParams({ company_id: companyId, page: String(page) });
       if (staffId) params.set("staff_id", staffId);
       return jsonRequest<AuditLogResponse>("GET", `/api/audit/logs?${params.toString()}`);
     },
@@ -245,12 +255,20 @@ export const api = {
     logout: () => jsonRequest<{ ok: true }>("POST", "/api/auth/logout"),
     status: () => jsonRequest<AuthStatusResponse>("GET", "/api/auth/status"),
   },
+  companies: {
+    list: () => jsonRequest<{ companies: Company[] }>("GET", "/api/companies"),
+    create: (payload: CreateCompanyRequest) => jsonRequest<Company>("POST", "/api/companies", payload),
+    update: (companyId: string, payload: UpdateCompanyRequest) =>
+      jsonRequest<Company>("PATCH", `/api/companies/${companyId}`, payload),
+    remove: (companyId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/companies/${companyId}`),
+  },
   users: {
-    list: () => jsonRequest<{ users: ManagedUser[] }>("GET", "/api/users"),
+    list: (companyId: string) => jsonRequest<{ users: ManagedUser[] }>("GET", `/api/users?company_id=${encodeURIComponent(companyId)}`),
     create: (payload: CreateUserRequest) => jsonRequest<ManagedUser>("POST", "/api/users", payload),
     update: (userId: string, payload: UpdateUserRequest) => jsonRequest<ManagedUser>("PATCH", `/api/users/${userId}`, payload),
-    resetPassword: (userId: string, newPassword: string) =>
-      jsonRequest<{ ok: true }>("POST", `/api/users/${userId}/reset-password`, { new_password: newPassword }),
-    remove: (userId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/users/${userId}`),
+    resetPassword: (userId: string, companyId: string, newPassword: string) =>
+      jsonRequest<{ ok: true }>("POST", `/api/users/${userId}/reset-password`, { company_id: companyId, new_password: newPassword }),
+    remove: (userId: string, companyId: string) =>
+      jsonRequest<{ ok: true }>("DELETE", `/api/users/${userId}?company_id=${encodeURIComponent(companyId)}`),
   },
 };

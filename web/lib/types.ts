@@ -331,12 +331,14 @@ export interface GenerateQuotationRequest {
 }
 
 // -------------------------------------------------------------------- Auth
+export type Role = "super_admin" | "staff";
+
 export interface CurrentUser {
   id: string;
   username: string;
   fullName: string;
-  role: "admin" | "staff";
-  companyId: string;
+  role: Role;
+  companyId: string | null; // null for super_admin, who belongs to no single company
 }
 
 export interface AuthStatusResponse {
@@ -344,27 +346,59 @@ export interface AuthStatusResponse {
   user?: CurrentUser;
 }
 
+// ---------------------------------------------------------------- Companies
+export interface Company {
+  id: string;
+  slug: string;
+  displayName: string;
+  active: boolean;
+  defaultCurrency?: string;
+  defaultVatRate?: number;
+  defaultValidity?: string;
+  termsAndConditions?: [string, string][];
+}
+
+export interface CreateCompanyRequest {
+  slug: string;
+  display_name: string;
+  default_currency?: string;
+  default_vat_rate?: number;
+  default_validity?: string;
+  terms_and_conditions?: [string, string][];
+}
+
+export interface UpdateCompanyRequest {
+  display_name?: string;
+  default_currency?: string;
+  default_vat_rate?: number;
+  default_validity?: string;
+  terms_and_conditions?: [string, string][];
+  active?: boolean;
+}
+
 // ------------------------------------------------------------------- Users
 export interface ManagedUser {
   id: string;
   username: string;
   fullName: string;
-  role: "admin" | "staff";
+  role: Role;
   active: boolean;
+  companyId: string | null;
   createdAt: string;
 }
 
 export interface CreateUserRequest {
+  company_id: string;
   username: string;
   full_name: string;
   password: string;
-  role: "admin" | "staff";
 }
 
 export interface UpdateUserRequest {
+  company_id: string;
   full_name?: string;
-  role?: "admin" | "staff";
   active?: boolean;
+  new_company_id?: string;
 }
 
 // ------------------------------------------------------------ Master Excel
@@ -393,6 +427,7 @@ export interface QuotationHistoryResponse {
 }
 
 export interface QuotationHistoryFilters {
+  companyId?: string;
   customer?: string;
   quoteNumber?: number;
   staffId?: string;
@@ -405,7 +440,7 @@ export interface QuotationHistoryFilters {
 export interface StaffSummaryEntry {
   id: string;
   fullName: string;
-  role: "admin" | "staff";
+  role: Role;
   active: boolean;
   quotesToday: number;
   lastActive: string | null;

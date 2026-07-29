@@ -13,9 +13,12 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("SESSION_SECRET", "test-session-secret")
 
 import _auth
+import _users_routes
 import index
 
-ADMIN = _auth.CurrentUser(id="admin-1", company_id="company-1", username="admin", full_name="Admin", role="admin", active=True)
+SUPER_ADMIN = _auth.CurrentUser(
+    id="super-1", company_id=None, username="admin", full_name="Admin", role="super_admin", active=True
+)
 STAFF = _auth.CurrentUser(id="staff-1", company_id="company-1", username="staff", full_name="Staff", role="staff", active=True)
 DISABLED = _auth.CurrentUser(
     id="disabled-1", company_id="company-1", username="disabled", full_name="Disabled", role="staff", active=False
@@ -64,9 +67,11 @@ class _FakeConnection:
 
 @pytest.fixture
 def fake_db(monkeypatch):
-    import _users_routes
-
     monkeypatch.setattr(_users_routes, "get_connection", lambda **kwargs: _FakeConnection())
+    # resolve_company_scope normally validates the company against the DB -
+    # bypassed here since these tests are about auth/role gating, not
+    # tenancy resolution (that has its own dedicated tests).
+    monkeypatch.setattr(_users_routes, "resolve_company_scope", lambda current_user, requested: requested or current_user.company_id)
 
 
 def _login_as(client, monkeypatch, user: _auth.CurrentUser, password_hash: str = "irrelevant"):
@@ -80,6 +85,7 @@ def _login_as(client, monkeypatch, user: _auth.CurrentUser, password_hash: str =
             "full_name": user.full_name,
             "role": user.role,
             "active": user.active,
+            "company_active": True,
             "password_hash": password_hash,
         }
 
@@ -109,6 +115,7 @@ def test_login_disabled_user_401s(client, monkeypatch):
             "full_name": DISABLED.full_name,
             "role": DISABLED.role,
             "active": False,
+            "company_active": True,
             "password_hash": "x",
         },
     )
@@ -116,38 +123,70 @@ def test_login_disabled_user_401s(client, monkeypatch):
     assert res.status_code == 401
 
 
-def test_valid_login_sets_cookie_and_grants_access(client, monkeypatch, fake_db):
-    _login_as(client, monkeypatch, ADMIN)
-    assert "gd_session" in client.cookies
-
-    res = client.get("/api/users")
-    assert res.status_code == 200
-
-
-def test_no_cookie_401s_protected_route(client):
-    res = client.get("/api/users")
+def test_login_disabled_company_401s(client, monkeypatch):
+    # A staff member whose own account is active but whose company was
+    # disabled by the Super Admin must also be blocked - either one alone
+    # is sufficient to lock a login out.
+    monkeypatch.setattr(
+        _auth,
+        "_load_user_for_login",
+        lambda username: {
+            "id": STAFF.id,
+            "company_id": STAFF.company_id,
+            "username": STAFF.username,
+            "full_name": STAFF.full_name,
+            "role": STAFF.role,
+            "active": True,
+            "company_active": False,
+            "password_hash": "x",
+        },
+    )
+    res = client.post("/api/auth/login", json={"username": "staff", "password": "whatever"})
     assert res.status_code == 401
 
 
-def test_staff_hitting_admin_route_403s(client, monkeypatch):
+def test_valid_login_sets_cookie_and_status_reports_authenticated(client, monkeypatch):
+    _login_as(client, monkeypatch, SUPER_ADMIN)
+    assert "gd_session" in client.cookies
+
+    res = client.get("/api/auth/status")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["authenticated"] is True
+    assert body["user"]["role"] == "super_admin"
+    assert body["user"]["companyId"] is None
+
+
+def test_no_cookie_401s_protected_route(client):
+    res = client.get("/api/users?company_id=company-1")
+    assert res.status_code == 401
+
+
+def test_staff_hitting_super_admin_route_403s(client, monkeypatch, fake_db):
     _login_as(client, monkeypatch, STAFF)
-    res = client.get("/api/users")
+    res = client.get("/api/users?company_id=company-1")
     assert res.status_code == 403
 
 
+def test_super_admin_can_reach_super_admin_route(client, monkeypatch, fake_db):
+    _login_as(client, monkeypatch, SUPER_ADMIN)
+    res = client.get("/api/users?company_id=company-1")
+    assert res.status_code == 200
+
+
 def test_tampered_cookie_401s(client, monkeypatch):
-    _login_as(client, monkeypatch, ADMIN)
+    _login_as(client, monkeypatch, SUPER_ADMIN)
     good_cookie = client.cookies["gd_session"]
     issued_at, user_id, _signature = good_cookie.split(".", 2)
     tampered = f"{issued_at}.{user_id}.deadbeef"
     client.cookies.set("gd_session", tampered)
-    res = client.get("/api/users")
-    assert res.status_code == 401
+    res = client.get("/api/auth/status")
+    assert res.json()["authenticated"] is False
 
 
 def test_logout_clears_session(client, monkeypatch):
-    _login_as(client, monkeypatch, ADMIN)
+    _login_as(client, monkeypatch, SUPER_ADMIN)
     res = client.post("/api/auth/logout")
     assert res.status_code == 200
-    res = client.get("/api/users")
-    assert res.status_code == 401
+    res = client.get("/api/auth/status")
+    assert res.json()["authenticated"] is False

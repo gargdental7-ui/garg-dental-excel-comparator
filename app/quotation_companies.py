@@ -1,27 +1,26 @@
-"""Company profile registry for the Smart Quotation Generator.
+"""Company profile registry for the Smart Quotation Generator - DB-backed
+via the `companies` table (in-process cached, since company profiles
+change rarely), keyed by the company's real UUID (companies.id) to match
+every other company-scoped table (users.company_id, master_excel.company_id,
+etc.) - a company's `slug` is a separate, human-readable field, not the
+lookup key.
 
-Historically a hardcoded dict; Phase 1 of the platform upgrade makes this
-DB-backed via the `companies` table, but keeps the exact same public API
-(get_company, list_companies, CompanyProfile) so every existing caller -
-app/quotation_docx.py, server/_quotation_routes.py, and the pre-existing
-test suite - is unaffected. Falls back to the original hardcoded entry
-below when DATABASE_URL isn't configured (e.g. local dev before Supabase
-env vars are set) or the DB is unreachable, so nothing breaks mid-migration
-or in environments (like this package's own test suite, or the Tkinter
-desktop app, which never had a DB dependency) that don't have server/ on
-their Python path at all.
-
-Adding a second company means adding one row to the `companies` table (or,
-before Phase 1's DB is live anywhere, one more _FALLBACK_COMPANIES entry)
-plus one template file - never touching the rendering engine, validation,
-or totals math in quotation.py / quotation_docx.py.
+Historically (Phase 1 of the original single-company upgrade) this had a
+hardcoded fallback dict for when the DB was unreachable. That stopped
+making sense once the whole platform became genuinely multi-tenant: auth
+itself now requires DB access (users live in the DB), so a DB outage
+already breaks login before this module would ever be reached, and there's
+no single hardcoded company profile that could stand in for "whichever of
+N companies was actually being asked for." A DB load failure now raises a
+clear CompanyDataUnavailableError instead of silently serving
+possibly-wrong data.
 """
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .exceptions import UnknownCompanyError
+from .exceptions import CompanyDataUnavailableError, UnknownCompanyError
 
 TEMPLATES_DIR = Path(__file__).parent / "quotation_templates"
 
@@ -30,66 +29,33 @@ logger = logging.getLogger("gargdental.quotation_companies")
 
 @dataclass
 class CompanyProfile:
-    id: str
+    id: str  # companies.id (UUID) - matches every other company-scoped table
+    slug: str
     display_name: str
-    template_filename: str
+    # None for a newly created company that hasn't had a template uploaded
+    # yet (Phase B lets Super Admin create companies before Phase C's
+    # per-company template upload exists for them) - template_path is None
+    # in that case, and callers (app/quotation_docx.py) must handle it.
+    template_filename: Optional[str] = None
     terms_and_conditions: list = field(default_factory=list)  # [(label, text), ...]
     default_currency: str = "NRs"
     default_vat_rate: float = 0.0
     default_validity: str = "30 days from the date of this quotation"
 
     @property
-    def template_path(self) -> Path:
+    def template_path(self) -> Optional[Path]:
+        if not self.template_filename:
+            return None
         return TEMPLATES_DIR / self.template_filename
 
-
-# Fallback seed data - kept in sync with server/migrations/0001_initial_schema.sql's
-# seed insert. Used whenever the DB isn't configured/reachable or has no
-# matching row yet.
-_FALLBACK_COMPANIES = {
-    "garg_dental": CompanyProfile(
-        id="garg_dental",
-        display_name="Garg Dental Pvt. Ltd",
-        template_filename="equipment_proposal_garg_dental.docx",
-        default_currency="NRs",
-        default_vat_rate=0.0,
-        terms_and_conditions=[
-            ("Prices", "Prices are in NRs on door delivery basis."),
-            ("Taxes", "VAT is Inclusive as applicable."),
-            ("Payment", "50% advance & balance remaining against delivery."),
-            ("Delivery", "After 6-8 weeks after your confirmed order subject to meet the payment terms."),
-            (
-                "Shipment From",
-                "Our warehouse in Kathmandu or from the location/company if it's a direct shipment.",
-            ),
-            (
-                "Purchase Order",
-                "Must be in the name of Garg Dental Pvt. Ltd or in the name of the principal co.",
-            ),
-            (
-                "Installation",
-                "Installation of the equipment will be done by our engineers based in Kathmandu at no extra cost.",
-            ),
-            (
-                "Warranty",
-                "The equipment are warranted against manufacturing defects for a period of 24 months from "
-                "the date of installation. All warranty replacement is subject to conditions.",
-            ),
-            (
-                "Scope of Warranty",
-                "Consumables, semi consumable, bulbs, probes, cables etc. are not covered under warranty. "
-                "Reusable accessories are covered under limited warranty (Condition apply).",
-            ),
-        ],
-    )
-}
 
 _cache: Optional[dict] = None
 
 
 def _row_to_profile(row: dict) -> CompanyProfile:
     return CompanyProfile(
-        id=row["slug"],
+        id=str(row["id"]),
+        slug=row["slug"],
         display_name=row["display_name"],
         template_filename=row["template_filename"],
         terms_and_conditions=[tuple(pair) for pair in row["terms_and_conditions"]],
@@ -109,26 +75,50 @@ def _load_from_db() -> Optional[dict]:
         return None
 
     try:
-        with get_connection() as conn:
+        # role="super_admin" is a synthetic assertion, not tied to any real
+        # user - this function's job is to load the shared company/template
+        # registry cache, which is legitimately a "see every company"
+        # operation regardless of who eventually calls get_company(). Now
+        # that RLS is enforced by a genuinely restricted DB role (not the
+        # bypassing one Supabase's default connection string handed out by
+        # default), an unscoped call here would otherwise see zero rows.
+        # The real per-request authorization boundary is unaffected - it's
+        # still resolve_company_scope()/route logic deciding what a given
+        # caller may act on; this only controls what this one process-wide
+        # config cache is allowed to read.
+        with get_connection(role="super_admin") as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "select slug, display_name, template_filename, default_currency, "
-                    "default_vat_rate, default_validity, terms_and_conditions from companies"
+                    "select id, slug, display_name, template_filename, default_currency, "
+                    "default_vat_rate, default_validity, terms_and_conditions from companies where active"
                 )
                 rows = cur.fetchall()
         if not rows:
             return None
-        return {row["slug"]: _row_to_profile(row) for row in rows}
+        return {str(row["id"]): _row_to_profile(row) for row in rows}
     except Exception:
-        logger.exception("Failed to load companies from the database; falling back to built-in defaults.")
+        logger.exception("Failed to load companies from the database.")
         return None
 
 
 def _companies() -> dict:
     global _cache
     if _cache is None:
-        _cache = _load_from_db() or dict(_FALLBACK_COMPANIES)
+        loaded = _load_from_db()
+        if loaded is None:
+            raise CompanyDataUnavailableError()
+        _cache = loaded
     return _cache
+
+
+def invalidate_cache() -> None:
+    """Called by server/_companies_routes.py after any company create/edit/
+    disable so a Super Admin's changes are visible immediately instead of
+    only after a cold start - this module-level cache was never a problem
+    when companies never changed at runtime (the original single-company
+    design), but now they do."""
+    global _cache
+    _cache = None
 
 
 def get_company(company_id: str) -> CompanyProfile:
@@ -136,6 +126,13 @@ def get_company(company_id: str) -> CompanyProfile:
     if company is None:
         raise UnknownCompanyError(company_id)
     return company
+
+
+def get_company_by_slug(slug: str) -> CompanyProfile:
+    for company in _companies().values():
+        if company.slug == slug:
+            return company
+    raise UnknownCompanyError(slug)
 
 
 def list_companies():

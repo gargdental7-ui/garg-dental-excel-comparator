@@ -19,7 +19,9 @@ import index
 
 from .factories import write_simple_workbook
 
-ADMIN = _auth.CurrentUser(id="admin-1", company_id="company-1", username="admin", full_name="Admin", role="admin", active=True)
+SUPER_ADMIN = _auth.CurrentUser(
+    id="super-1", company_id=None, username="admin", full_name="Admin", role="super_admin", active=True
+)
 STAFF = _auth.CurrentUser(id="staff-1", company_id="company-1", username="staff", full_name="Staff", role="staff", active=True)
 
 
@@ -39,6 +41,7 @@ def _login_as(client, monkeypatch, user):
             "full_name": user.full_name,
             "role": user.role,
             "active": user.active,
+            "company_active": True,
             "password_hash": "x",
         },
     )
@@ -63,21 +66,21 @@ def test_get_metadata_requires_auth(client):
     assert res.status_code == 401
 
 
-def test_upload_requires_admin(client, monkeypatch):
+def test_upload_requires_super_admin(client, monkeypatch):
     _login_as(client, monkeypatch, STAFF)
-    res = client.put("/api/master-excel", files={"file": ("x.xlsx", b"irrelevant")})
+    res = client.put("/api/master-excel?company_id=company-1", files={"file": ("x.xlsx", b"irrelevant")})
     assert res.status_code == 403
 
 
-def test_delete_requires_admin(client, monkeypatch):
+def test_delete_requires_super_admin(client, monkeypatch):
     _login_as(client, monkeypatch, STAFF)
-    res = client.delete("/api/master-excel")
+    res = client.delete("/api/master-excel?company_id=company-1")
     assert res.status_code == 403
 
 
-def test_download_requires_admin(client, monkeypatch):
+def test_download_requires_super_admin(client, monkeypatch):
     _login_as(client, monkeypatch, STAFF)
-    res = client.get("/api/master-excel/download")
+    res = client.get("/api/master-excel/download?company_id=company-1")
     assert res.status_code == 403
 
 
@@ -97,7 +100,7 @@ def test_company_master_source_matches_direct_upload(client, monkeypatch, tmp_pa
     assert upload_res.status_code == 200
     upload_body = upload_res.json()
 
-    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_bytes", lambda current_user: content)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_bytes", lambda current_user, company_id=None: content)
     master_res = client.post("/api/quotation/products/inspect", data={"excel_source": "company_master"})
     assert master_res.status_code == 200
     master_body = master_res.json()
@@ -110,7 +113,7 @@ def test_company_master_source_matches_direct_upload(client, monkeypatch, tmp_pa
 def test_company_master_source_without_one_uploaded_gives_clear_error(client, monkeypatch):
     _login_as(client, monkeypatch, STAFF)
 
-    def raise_no_master(current_user):
+    def raise_no_master(current_user, company_id=None):
         from app.exceptions import NoMasterExcelError
 
         raise NoMasterExcelError()
