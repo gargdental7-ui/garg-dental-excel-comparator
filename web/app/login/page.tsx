@@ -2,11 +2,10 @@
 
 import { Suspense, useState } from "react";
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/Button";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -29,8 +28,16 @@ function LoginForm() {
         return;
       }
       const next = searchParams.get("next") || "/";
-      router.push(next);
-      router.refresh();
+      // Full navigation, not router.push: Sidebar/useCurrentUser() fetch
+      // the logged-in user once per mount (useEffect with an empty dep
+      // array). router.push()+router.refresh() re-fetches server data but
+      // never remounts client components, so switching users in the same
+      // tab (sign out, sign back in as someone else) left every
+      // role-gated client component - the sidebar's nav links included -
+      // showing the PREVIOUS user's role until a manual hard reload. A
+      // full navigation remounts the whole app, guaranteeing every
+      // component re-resolves the new session.
+      window.location.href = next;
     } catch {
       setError("Could not reach the server. Please try again.");
     } finally {

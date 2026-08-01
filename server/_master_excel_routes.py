@@ -32,12 +32,19 @@ def _storage_path(company_id: str, filename: str) -> str:
 
 
 def _fetch_row(current_user: CurrentUser, scope: str):
+    # left join, not join: uploaded_by is always a super_admin (upload
+    # requires require_super_admin), whose own users row has company_id
+    # NULL - when this query runs in a staff session, the users RLS policy
+    # hides that row, so an inner join silently returned zero rows here
+    # (breaking "Use Company's Master Excel" for every staff member) even
+    # though the master_excel row itself was visible. This function backs
+    # fetch_master_excel_bytes(), which staff call on every generate().
     with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "select m.storage_path, m.original_filename, m.uploaded_at, m.file_size, m.version, "
                 "u.full_name as uploaded_by_name "
-                "from master_excel m join users u on u.id = m.uploaded_by "
+                "from master_excel m left join users u on u.id = m.uploaded_by "
                 "where m.company_id = %s",
                 (scope,),
             )

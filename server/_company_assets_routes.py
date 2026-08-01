@@ -41,12 +41,19 @@ def _storage_path(company_id: str, filename: str) -> str:
 
 
 def _fetch_template_row(current_user: CurrentUser, scope: str):
+    # left join, not join: uploaded_by is always a super_admin (upload requires
+    # require_super_admin), and a super_admin's own users row has company_id
+    # NULL - when this query runs in a staff session, the users RLS policy
+    # hides that row, so an inner join silently returned zero rows here
+    # (breaking quotation generation for every staff member) even though the
+    # template row itself was visible. This function is also used by
+    # fetch_company_template_bytes(), which staff call on every generate().
     with get_connection(company_id=scope, user_id=current_user.id, role=current_user.role) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "select t.storage_path, t.original_filename, t.uploaded_at, t.file_size, t.version, "
                 "u.full_name as uploaded_by_name "
-                "from quotation_templates t join users u on u.id = t.uploaded_by "
+                "from quotation_templates t left join users u on u.id = t.uploaded_by "
                 "where t.company_id = %s",
                 (scope,),
             )

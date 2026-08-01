@@ -84,7 +84,13 @@ def list_history(
             cur.execute(
                 f"select q.id, q.quote_number, q.customer_name, q.created_at, q.status, q.pdf_storage_path, "
                 f"u.full_name as created_by_name "
-                f"from quotations q join users u on u.id = q.created_by "
+                # left join, not join: a quotation can be created_by a
+                # super_admin (company_id NULL), whose users row the
+                # users RLS policy hides from a staff caller's session -
+                # an inner join here would silently drop that quotation
+                # from every staff member's history view, not just fail
+                # to show the creator's name.
+                f"from quotations q left join users u on u.id = q.created_by "
                 f"where {where_clause} "
                 f"order by q.created_at desc "
                 f"limit %s offset %s",
