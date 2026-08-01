@@ -187,12 +187,19 @@ export const api = {
     },
   },
   quotation: {
-    inspectProducts: (file: File | null, sheet?: string, headerRow?: number, excelSource: ExcelSource = "upload") => {
+    inspectProducts: (
+      file: File | null,
+      sheet?: string,
+      headerRow?: number,
+      excelSource: ExcelSource = "upload",
+      companyId?: string,
+    ) => {
       const form = new FormData();
       form.append("excel_source", excelSource);
       if (file) form.append("file", file);
       if (sheet) form.append("sheet", sheet);
       if (headerRow != null) form.append("header_row", String(headerRow));
+      if (companyId) form.append("company_id", companyId);
       return postForm<QuotationProductsInspectResponse>(`/api/quotation/products/inspect`, form);
     },
     importProducts: (
@@ -201,6 +208,7 @@ export const api = {
       mapping: ProductColumnMapping,
       headerRow?: number,
       excelSource: ExcelSource = "upload",
+      companyId?: string,
     ) => {
       const form = new FormData();
       form.append("excel_source", excelSource);
@@ -208,6 +216,7 @@ export const api = {
       form.append("sheet", sheet);
       form.append("mapping", JSON.stringify(mapping));
       if (headerRow != null) form.append("header_row", String(headerRow));
+      if (companyId) form.append("company_id", companyId);
       return postForm<QuotationProductsImportResponse>(`/api/quotation/products/import`, form);
     },
     generate: (payload: GenerateQuotationRequest) => postJsonForBlob(`/api/quotation/generate`, payload),

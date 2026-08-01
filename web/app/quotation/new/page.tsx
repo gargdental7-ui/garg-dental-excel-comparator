@@ -281,6 +281,7 @@ function NewQuotePage() {
 
           {mode === "excel" && !excelProducts && (
             <ProductImportPanel
+              companyId={companyId ?? undefined}
               onImported={(products, fileName) => {
                 setExcelProducts(products);
                 setExcelFileName(fileName);

@@ -47,18 +47,44 @@ function NumberField({
   onChange: (v: number) => void;
   required?: boolean;
 }) {
+  // Local string state, not `value` directly: a controlled number input
+  // whose displayed value is the numeric state itself snaps back to "0"
+  // the instant the field is cleared (empty string -> onChange(0) ->
+  // re-render with value=0), making it impossible to type a fresh number
+  // or a decimal ("12." would round-trip back to "12", eating the dot).
+  // `lastPushed` (plain state, not a ref - refs can't be read/written
+  // during render) lets an external change (Edit/Duplicate/reset) still
+  // sync the display, without every keystroke's own onChange stomping
+  // what the user is mid-typing.
+  const [text, setText] = useState(String(value));
+  const [lastPushed, setLastPushed] = useState(value);
+  if (value !== lastPushed) {
+    setLastPushed(value);
+    if (text !== String(value)) setText(String(value));
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value;
+    setText(raw);
+    if (raw === "" || raw === "-") {
+      setLastPushed(0);
+      onChange(0);
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed)) {
+      setLastPushed(parsed);
+      onChange(parsed);
+    }
+  }
+
   return (
     <div>
       <label className={LABEL_CLASS}>
         {label}
         {required ? " *" : ""}
       </label>
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
-        className={INPUT_CLASS}
-      />
+      <input type="number" value={text} onChange={handleChange} className={INPUT_CLASS} />
     </div>
   );
 }

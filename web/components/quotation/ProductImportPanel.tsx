@@ -32,8 +32,10 @@ const EMPTY_MAPPING: ProductColumnMapping = {
 
 export function ProductImportPanel({
   onImported,
+  companyId,
 }: {
   onImported: (products: QuotationImportedProduct[], fileName: string) => void;
+  companyId?: string;
 }) {
   const [excelSource, setExcelSource] = useState<ExcelSource>("upload");
   const [masterMeta, setMasterMeta] = useState<MasterExcelMetadata | null>(null);
@@ -50,8 +52,8 @@ export function ProductImportPanel({
   const [imported, setImported] = useState(false);
 
   useEffect(() => {
-    api.masterExcel.getMetadata().then(setMasterMeta).catch(() => setMasterMeta({ exists: false }));
-  }, []);
+    api.masterExcel.getMetadata(companyId).then(setMasterMeta).catch(() => setMasterMeta({ exists: false }));
+  }, [companyId]);
 
   function resetFileState() {
     setSheetNames([]);
@@ -76,7 +78,7 @@ export function ProductImportPanel({
     setBusy(true);
     setError(null);
     try {
-      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet, nextHeaderRow, source);
+      const inspection = await api.quotation.inspectProducts(nextFile, nextSheet, nextHeaderRow, source, companyId);
       setSheetNames(inspection.sheet_names);
       setSheet(inspection.selected_sheet);
       setPreviewRows(inspection.preview_rows);
@@ -113,7 +115,7 @@ export function ProductImportPanel({
     setBusy(true);
     setError(null);
     try {
-      const result = await api.quotation.importProducts(file, sheet, mapping, headerRow, excelSource);
+      const result = await api.quotation.importProducts(file, sheet, mapping, headerRow, excelSource, companyId);
       setImported(true);
       const sourceName = excelSource === "company_master" && masterMeta?.exists ? masterMeta.filename : (file?.name ?? "");
       onImported(result.products, sourceName);
