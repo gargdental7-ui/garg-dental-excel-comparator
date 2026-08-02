@@ -422,6 +422,17 @@ export interface UpdateUserRequest {
   new_company_id?: string;
 }
 
+export interface CreateSuperAdminRequest {
+  username: string;
+  full_name: string;
+  password: string;
+}
+
+export interface UpdateSuperAdminRequest {
+  full_name?: string;
+  active?: boolean;
+}
+
 // ------------------------------------------------------------ Master Excel
 export type ExcelSource = "upload" | "company_master";
 

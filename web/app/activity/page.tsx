@@ -74,6 +74,7 @@ export default function ActivityDashboardPage() {
           <Link
             key={s.id}
             href={`/activity/${s.id}?company_id=${companyId}`}
+            prefetch={false}
             className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md"
           >
             <div className="flex items-center justify-between">

@@ -66,6 +66,7 @@ export default function HomePage() {
             <Link
               key={tool.href}
               href={tool.href}
+              prefetch={false}
               className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-cyan/40 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900"
             >
               <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-brand-navy/10 text-brand-navy transition-colors group-hover:bg-brand-navy group-hover:text-white dark:bg-brand-cyan/10 dark:text-brand-cyan dark:group-hover:bg-brand-cyan dark:group-hover:text-slate-950">

@@ -89,6 +89,7 @@ export default function QuotationDashboardPage() {
               <Link
                 key={title}
                 href={`/quotation/new?company_id=${encodeURIComponent(resolvedCompanyId)}`}
+                prefetch={false}
                 className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md"
               >
                 <Icon className="h-5 w-5 text-brand-cyan" />
@@ -98,6 +99,7 @@ export default function QuotationDashboardPage() {
             ))}
             <Link
               href="/quotation/history"
+              prefetch={false}
               className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md"
             >
               <History className="h-5 w-5 text-brand-cyan" />
@@ -107,6 +109,7 @@ export default function QuotationDashboardPage() {
             {isSuperAdmin && (
               <Link
                 href="/settings/company-assets"
+                prefetch={false}
                 className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md"
               >
                 <Layers className="h-5 w-5 text-brand-cyan" />

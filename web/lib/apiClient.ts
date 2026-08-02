@@ -12,6 +12,7 @@ import {
   type ComparatorAnalyzeResult,
   type ComparatorInspectResponse,
   type CreateCompanyRequest,
+  type CreateSuperAdminRequest,
   type CreateUserRequest,
   type ExcelSource,
   type GenerateQuotationRequest,
@@ -28,6 +29,7 @@ import {
   type SignatureSummary,
   type StaffSummaryEntry,
   type UpdateCompanyRequest,
+  type UpdateSuperAdminRequest,
   type UpdateUserRequest,
 } from "./types";
 
@@ -337,5 +339,12 @@ export const api = {
       jsonRequest<{ ok: true }>("POST", `/api/users/${userId}/reset-password`, { company_id: companyId, new_password: newPassword }),
     remove: (userId: string, companyId: string) =>
       jsonRequest<{ ok: true }>("DELETE", `/api/users/${userId}?company_id=${encodeURIComponent(companyId)}`),
+    listSuperAdmins: () => jsonRequest<{ users: ManagedUser[] }>("GET", "/api/users/super-admins"),
+    createSuperAdmin: (payload: CreateSuperAdminRequest) => jsonRequest<ManagedUser>("POST", "/api/users/super-admins", payload),
+    updateSuperAdmin: (userId: string, payload: UpdateSuperAdminRequest) =>
+      jsonRequest<ManagedUser>("PATCH", `/api/users/super-admins/${userId}`, payload),
+    resetSuperAdminPassword: (userId: string, newPassword: string) =>
+      jsonRequest<{ ok: true }>("POST", `/api/users/super-admins/${userId}/reset-password`, { new_password: newPassword }),
+    removeSuperAdmin: (userId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/users/super-admins/${userId}`),
   },
 };

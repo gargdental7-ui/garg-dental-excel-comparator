@@ -126,7 +126,7 @@ export default function CompaniesPage() {
     {
       header: "Name",
       render: (c) => (
-        <Link href={`/companies/${c.id}/dashboard`} className="font-medium text-brand-navy hover:underline dark:text-brand-cyan">
+        <Link href={`/companies/${c.id}/dashboard`} prefetch={false} className="font-medium text-brand-navy hover:underline dark:text-brand-cyan">
           {c.displayName}
         </Link>
       ),

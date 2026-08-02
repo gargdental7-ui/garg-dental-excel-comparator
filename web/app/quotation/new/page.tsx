@@ -260,7 +260,7 @@ function NewQuotePage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 print:max-w-none print:px-0 print:py-0">
       <div className="print:hidden">
-        <Link href="/quotation" className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+        <Link href="/quotation" prefetch={false} className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
           &larr; Quotation Dashboard
         </Link>
         <h1 className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-50">Smart Quotation Generator</h1>
