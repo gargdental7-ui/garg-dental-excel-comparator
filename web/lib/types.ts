@@ -433,6 +433,73 @@ export interface UpdateSuperAdminRequest {
   active?: boolean;
 }
 
+// --------------------------------------------------------------- Onboarding
+export interface OnboardingSession {
+  id: string;
+  status: "draft" | "reviewing" | "published";
+  companyId: string | null;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface OnboardingDocument {
+  id: string;
+  filename: string;
+  documentType: "quotation" | "catalog" | "brochure" | "image" | "other";
+  extractionStatus: "pending" | "processing" | "done" | "failed";
+  extractionError: string | null;
+  uploadedAt: string;
+}
+
+export interface OnboardingCompanyField {
+  fieldName: string;
+  extractedValue: string | null;
+  confidence: number;
+  reviewedValue: string | null;
+  sourceDocumentId: string | null;
+}
+
+export interface OnboardingProduct {
+  id: string;
+  productName: string;
+  code: string;
+  description: string;
+  brand: string;
+  model: string;
+  origin: string;
+  category: string;
+  warranty: string;
+  price: number;
+  mrp: number;
+  confidence: number;
+  duplicateOfProductId: string | null;
+  included: boolean;
+  sourceDocumentId: string | null;
+}
+
+export interface OnboardingSessionDetail {
+  session: OnboardingSession;
+  documents: OnboardingDocument[];
+  companyFields: OnboardingCompanyField[];
+  products: OnboardingProduct[];
+  duplicateGroups: string[][];
+}
+
+export interface PublishOnboardingRequest {
+  slug: string;
+  admin_username: string;
+  admin_full_name: string;
+  admin_password: string;
+}
+
+export interface PublishOnboardingResponse {
+  companyId: string;
+  slug: string;
+  productCount: number;
+  adminUsername: string;
+  adminUserId: string;
+}
+
 // ------------------------------------------------------------ Master Excel
 export type ExcelSource = "upload" | "company_master";
 

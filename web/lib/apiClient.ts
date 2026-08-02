@@ -20,7 +20,11 @@ import {
   type InventoryInspectResponse,
   type ManagedUser,
   type MasterExcelMetadata,
+  type OnboardingSession,
+  type OnboardingSessionDetail,
   type ProductColumnMapping,
+  type PublishOnboardingRequest,
+  type PublishOnboardingResponse,
   type QuotationHistoryFilters,
   type QuotationHistoryResponse,
   type QuotationProductsImportResponse,
@@ -346,5 +350,28 @@ export const api = {
     resetSuperAdminPassword: (userId: string, newPassword: string) =>
       jsonRequest<{ ok: true }>("POST", `/api/users/super-admins/${userId}/reset-password`, { new_password: newPassword }),
     removeSuperAdmin: (userId: string) => jsonRequest<{ ok: true }>("DELETE", `/api/users/super-admins/${userId}`),
+  },
+  onboarding: {
+    createSession: () => jsonRequest<OnboardingSession>("POST", "/api/onboarding/sessions"),
+    getSession: (sessionId: string) => jsonRequest<OnboardingSessionDetail>("GET", `/api/onboarding/sessions/${sessionId}`),
+    uploadDocument: (sessionId: string, file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return postForm<OnboardingSessionDetail>(`/api/onboarding/sessions/${sessionId}/documents`, form);
+    },
+    updateField: (sessionId: string, fieldName: string, reviewedValue: string | null) =>
+      jsonRequest<OnboardingSessionDetail>("PATCH", `/api/onboarding/sessions/${sessionId}/fields`, {
+        field_name: fieldName,
+        reviewed_value: reviewedValue,
+      }),
+    updateProduct: (sessionId: string, productId: string, payload: Record<string, unknown>) =>
+      jsonRequest<OnboardingSessionDetail>("PATCH", `/api/onboarding/sessions/${sessionId}/products/${productId}`, payload),
+    markDuplicate: (sessionId: string, productId: string, duplicateOfProductId: string) =>
+      jsonRequest<OnboardingSessionDetail>(
+        "POST",
+        `/api/onboarding/sessions/${sessionId}/products/${productId}/mark-duplicate?duplicate_of_product_id=${encodeURIComponent(duplicateOfProductId)}`,
+      ),
+    publish: (sessionId: string, payload: PublishOnboardingRequest) =>
+      jsonRequest<PublishOnboardingResponse>("POST", `/api/onboarding/sessions/${sessionId}/publish`, payload),
   },
 };

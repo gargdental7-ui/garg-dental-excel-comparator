@@ -12,6 +12,7 @@ from _audit_routes import router as audit_router
 from _companies_routes import router as companies_router
 from _company_assets_routes import router as company_assets_router
 from _master_excel_routes import router as master_excel_router
+from _onboarding_routes import router as onboarding_router
 from _quotation_history_routes import router as quotation_history_router
 from _quotation_routes import router as quotation_router
 from _signatures_routes import router as signatures_router
@@ -31,6 +32,7 @@ app.include_router(audit_router)
 app.include_router(companies_router)
 app.include_router(company_assets_router)
 app.include_router(signatures_router)
+app.include_router(onboarding_router)
 
 
 @app.get("/api/ping")
