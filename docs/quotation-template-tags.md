@@ -11,6 +11,7 @@ Templates are built with [docxtpl](https://docxtpl.readthedocs.io/), which uses 
 | `{{ proposal.title }}` | Quotation title |
 | `{{ proposal.subject }}` | Quotation subject line |
 | `{{ proposal.quotation_date }}` | Quotation date |
+| `{{ proposal.prepared_by }}` | Name of the staff member preparing the quotation |
 | `{{ customer.designation }}` | Customer contact's designation |
 | `{{ customer.company_name }}` | Customer's company name (falls back to customer name if blank) |
 | `{{ customer.address }}` | Customer address |
@@ -38,6 +39,7 @@ Each entry in `items` has:
 | Tag (inside the loop) | Description |
 |---|---|
 | `{{ product_name }}` | Product name |
+| `{{ description }}` | Product description |
 | `{{ model }}` | Model number |
 | `{{ brand }}` | Brand |
 | `{{ origin }}` | Country of origin |

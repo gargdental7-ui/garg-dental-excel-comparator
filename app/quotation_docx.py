@@ -81,6 +81,7 @@ def _build_item_context(tpl, item):
     item_total: ItemTotal = compute_item_total(item)
     return {
         "product_name": item.product_name,
+        "description": item.description,
         "model": item.model,
         "brand": item.brand,
         "origin": item.origin,
@@ -145,6 +146,7 @@ def render_quotation_docx(
             "title": proposal.title,
             "subject": proposal.subject,
             "quotation_date": proposal.quotation_date,
+            "prepared_by": proposal.prepared_by,
         },
         "customer": {
             "designation": customer.designation,
