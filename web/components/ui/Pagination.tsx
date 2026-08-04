@@ -15,7 +15,7 @@ export function Pagination({
   if (totalPages <= 1) return null;
 
   return (
-    <div className="mt-3 flex items-center justify-between text-sm text-slate-600 dark:text-slate-400">
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-400">
       <span>
         Page {page} of {totalPages} ({total} total)
       </span>
@@ -24,7 +24,7 @@ export function Pagination({
           type="button"
           disabled={page <= 1}
           onClick={() => onChange(page - 1)}
-          className="flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 disabled:opacity-40"
+          className="flex min-h-[44px] items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-2 disabled:opacity-40"
         >
           <ChevronLeft className="h-4 w-4" /> Prev
         </button>
@@ -32,7 +32,7 @@ export function Pagination({
           type="button"
           disabled={page >= totalPages}
           onClick={() => onChange(page + 1)}
-          className="flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-2 py-1 disabled:opacity-40"
+          className="flex min-h-[44px] items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-2 disabled:opacity-40"
         >
           Next <ChevronRight className="h-4 w-4" />
         </button>

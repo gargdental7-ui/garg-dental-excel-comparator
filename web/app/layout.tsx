@@ -30,7 +30,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex bg-slate-50 dark:bg-slate-950">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto print:overflow-visible">{children}</main>
+        {/* pt-16 clears the fixed hamburger trigger Sidebar renders below
+            md: - most pages only have p-6, not enough room on their own. */}
+        <main className="flex-1 overflow-y-auto pt-16 md:pt-0 print:overflow-visible print:pt-0">{children}</main>
       </body>
     </html>
   );

@@ -68,7 +68,7 @@ function CreateUserModal({
 
         {error && <ErrorBanner message={error} />}
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
@@ -127,7 +127,7 @@ function CreateSuperAdminModal({ onClose, onCreated }: { onClose: () => void; on
 
         {error && <ErrorBanner message={error} />}
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
@@ -176,7 +176,7 @@ function ResetSuperAdminPasswordModal({ user, onClose }: { user: ManagedUser; on
             className="mb-3 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-500"
           />
           {error && <ErrorBanner message={error} />}
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               Close
             </Button>
@@ -226,7 +226,7 @@ function ResetPasswordModal({ user, companyId, onClose }: { user: ManagedUser; c
             className="mb-3 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-500"
           />
           {error && <ErrorBanner message={error} />}
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
             <Button type="button" variant="secondary" onClick={onClose}>
               Close
             </Button>
@@ -433,7 +433,7 @@ export default function UsersPage() {
       <PageHeader icon={UsersIcon} title="Users" description="Manage Super Admins and staff accounts." />
 
       <div className="mb-8">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-50">Super Admins</h2>
           <Button onClick={() => setShowCreateSuperAdmin(true)}>Add Super Admin</Button>
         </div>
@@ -461,7 +461,7 @@ export default function UsersPage() {
 
       <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-slate-50">Staff</h2>
 
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <CompanySelector value={companyId} onChange={setCompanyId} />
         <Button onClick={() => setShowCreate(true)} disabled={!companyId}>
           Add User

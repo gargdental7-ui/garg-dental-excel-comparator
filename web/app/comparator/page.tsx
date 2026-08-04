@@ -194,7 +194,7 @@ export default function ComparatorPage() {
 
           {result.mode === "mapped" && <MappedComparisonResults result={result} />}
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button onClick={handleExport} disabled={exporting}>
               {exporting ? "Preparing..." : "Save Result Excel"}
             </Button>
