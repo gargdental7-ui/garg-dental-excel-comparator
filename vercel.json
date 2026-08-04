@@ -4,7 +4,10 @@
     "backend": {
       "root": "server/",
       "entrypoint": "index:app",
-      "installCommand": "rm -rf app && cp -r ../app ./app && pip install -r requirements.txt"
+      "installCommand": "rm -rf app && cp -r ../app ./app && pip install -r requirements.txt",
+      "functions": {
+        "index.py": { "regions": ["sin1"] }
+      }
     }
   },
   "rewrites": [

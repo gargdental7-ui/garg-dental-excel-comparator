@@ -105,7 +105,32 @@ def _user_and_company_active(row: dict) -> bool:
     return True
 
 
+# Short in-process cache for _load_user_by_id, since require_auth() calls it
+# on every single /api/* request and the cross-region hop to Supabase makes
+# that add up (see project plan). Auth itself is a stateless signed cookie -
+# no DB-backed session row - so this cache only affects how quickly a
+# DB-side change (disable/delete a user, disable their company) takes
+# effect. The TTL is a fallback only; the real safety net is that every
+# mutation which can change these fields explicitly calls
+# invalidate_user_cache() (mirrors app/quotation_companies.py's
+# _cache/invalidate_cache() pattern) - see update_user, update_super_admin,
+# delete_user, delete_super_admin in _users_routes.py, and update_company in
+# _companies_routes.py.
+_USER_CACHE_TTL_SECONDS = 4
+_user_cache: dict[str, tuple[Optional[CurrentUser], float]] = {}
+
+
+def invalidate_user_cache() -> None:
+    _user_cache.clear()
+
+
 def _load_user_by_id(user_id: str) -> Optional[CurrentUser]:
+    cached = _user_cache.get(user_id)
+    if cached is not None:
+        user, expires_at = cached
+        if time.time() < expires_at:
+            return user
+
     try:
         with get_connection(user_id=user_id) as conn:
             with conn.cursor() as cur:
@@ -119,9 +144,10 @@ def _load_user_by_id(user_id: str) -> Optional[CurrentUser]:
     except Exception:
         logger.exception("Failed to load user %s", user_id)
         return None
-    if row is None or not _user_and_company_active(row):
-        return None
-    return _row_to_user(row)
+
+    user = _row_to_user(row) if row is not None and _user_and_company_active(row) else None
+    _user_cache[user_id] = (user, time.time() + _USER_CACHE_TTL_SECONDS)
+    return user
 
 
 def _load_user_for_login(username: str) -> Optional[dict]:

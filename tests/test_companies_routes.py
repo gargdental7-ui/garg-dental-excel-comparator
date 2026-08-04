@@ -48,31 +48,51 @@ def _login_as(client, monkeypatch, user):
 
 
 class _FakeDashboardCursor:
-    def __init__(self):
+    """The dashboard route now issues a single combined query (LEFT JOIN
+    LATERAL) instead of 8 sequential ones - one execute() per test, so this
+    just returns one merged row rather than dispatching per SQL substring."""
+
+    def __init__(self, company_exists=True):
+        self.company_exists = company_exists
         self.last_query = ""
 
     def execute(self, query, params=None):
         self.last_query = " ".join(query.split())
 
     def fetchone(self):
-        q = self.last_query
-        if "select 1 from companies" in q:
-            return {"exists": 1}
-        if "count(*) filter" in q:
-            return {"today": 2, "this_month": 5, "customers": 3}
-        if "from quotations q join users u" in q:
-            return {"full_name": "Jane Staff", "n": 5}
-        if "quote_number, customer_name, created_at from quotations" in q:
-            return {"quote_number": 7, "customer_name": "Acme Clinic", "created_at": datetime.now(timezone.utc)}
-        if "from master_excel" in q:
-            return {"version": 3, "file_size": 1000}
-        if "from quotation_templates" in q:
-            return {"version": 2, "file_size": 2000}
-        if "count(*) as n from signatures" in q:
-            return {"n": 4}
-        if "coalesce(sum(qf.size_bytes)" in q:
-            return {"total": 500}
-        return None
+        if not self.company_exists:
+            return {
+                "company_exists": False,
+                "today": 0,
+                "this_month": 0,
+                "customers": 0,
+                "most_active_full_name": None,
+                "last_quote_number": None,
+                "last_customer_name": None,
+                "last_created_at": None,
+                "master_excel_version": None,
+                "master_excel_file_size": None,
+                "template_version": None,
+                "template_file_size": None,
+                "active_signatures": 0,
+                "quotation_files_bytes": 0,
+            }
+        return {
+            "company_exists": True,
+            "today": 2,
+            "this_month": 5,
+            "customers": 3,
+            "most_active_full_name": "Jane Staff",
+            "last_quote_number": 7,
+            "last_customer_name": "Acme Clinic",
+            "last_created_at": datetime.now(timezone.utc),
+            "master_excel_version": 3,
+            "master_excel_file_size": 1000,
+            "template_version": 2,
+            "template_file_size": 2000,
+            "active_signatures": 4,
+            "quotation_files_bytes": 500,
+        }
 
     def __enter__(self):
         return self
@@ -82,8 +102,11 @@ class _FakeDashboardCursor:
 
 
 class _FakeDashboardConnection:
+    def __init__(self, company_exists=True):
+        self.company_exists = company_exists
+
     def cursor(self):
-        return _FakeDashboardCursor()
+        return _FakeDashboardCursor(company_exists=self.company_exists)
 
     def __enter__(self):
         return self
@@ -120,3 +143,13 @@ def test_dashboard_aggregates_expected_shape(client, monkeypatch):
     assert body["activeSignatureCount"] == 4
     # 500 (quotation files) + 1000 (master excel) + 2000 (template)
     assert body["storageBytes"] == 3500
+
+
+def test_dashboard_404s_when_company_missing(client, monkeypatch):
+    _login_as(client, monkeypatch, SUPER_ADMIN)
+    monkeypatch.setattr(
+        _companies_routes, "get_connection", lambda **kwargs: _FakeDashboardConnection(company_exists=False)
+    )
+
+    res = client.get("/api/companies/company-1/dashboard")
+    assert res.status_code == 404

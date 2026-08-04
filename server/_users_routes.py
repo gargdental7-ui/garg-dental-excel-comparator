@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from _audit import log_action
-from _auth import CurrentUser, require_super_admin
+from _auth import CurrentUser, invalidate_user_cache, require_super_admin
 from _db import get_connection
 from _errors import handle_app_errors
 from _tenancy import resolve_company_scope
@@ -148,6 +148,7 @@ def update_super_admin(
             row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": "Super Admin not found."})
+    invalidate_user_cache()
     action = ("enable_user" if updates["active"] else "disable_user") if "active" in updates else "update_user"
     log_action(current_user, None, action, "user", str(row["id"]), request, {k: str(v) for k, v in updates.items()})
     return _user_out(row)
@@ -200,6 +201,7 @@ def delete_super_admin(user_id: str, request: Request, current_user: CurrentUser
                     },
                 )
             cur.execute("delete from users where company_id is null and id = %s", (user_id,))
+    invalidate_user_cache()
     log_action(current_user, None, "delete_user", "user", user_id, request, {"username": row["username"]})
     return {"ok": True}
 
@@ -236,6 +238,7 @@ def update_user(user_id: str, payload: UpdateUserRequest, request: Request, curr
             row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": "User not found."})
+    invalidate_user_cache()
     if "company_id" in updates:
         action = "move_user"
     elif "active" in updates:
@@ -282,5 +285,6 @@ def delete_user(user_id: str, company_id: str, request: Request, current_user: C
             row = cur.fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail={"message": "User not found."})
+    invalidate_user_cache()
     log_action(current_user, scope, "delete_user", "user", str(row["id"]), request, {"username": row["username"]})
     return {"ok": True}

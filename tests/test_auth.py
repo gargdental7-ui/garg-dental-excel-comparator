@@ -190,3 +190,103 @@ def test_logout_clears_session(client, monkeypatch):
     assert res.status_code == 200
     res = client.get("/api/auth/status")
     assert res.json()["authenticated"] is False
+
+
+class _CountingUserRow:
+    """Fake get_connection for _load_user_by_id's own query, separate from
+    the other fakes above which stub _load_user_by_id itself out entirely -
+    this one exercises the real function to test the cache added around
+    it."""
+
+    def __init__(self, row):
+        self.row = row
+        self.calls = 0
+
+    def __call__(self, **kwargs):
+        self.calls += 1
+        return self
+
+    def cursor(self):
+        return self
+
+    def execute(self, *args, **kwargs):
+        pass
+
+    def fetchone(self):
+        return self.row
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_load_user_by_id_caches_within_ttl(monkeypatch):
+    _auth._user_cache.clear()
+    fake_conn = _CountingUserRow(
+        {"id": "u1", "company_id": None, "username": "a", "full_name": "A", "role": "super_admin", "active": True, "company_active": None}
+    )
+    monkeypatch.setattr(_auth, "get_connection", fake_conn)
+
+    first = _auth._load_user_by_id("u1")
+    second = _auth._load_user_by_id("u1")
+
+    assert first is not None and second is not None
+    assert first.id == second.id == "u1"
+    assert fake_conn.calls == 1  # second call served from cache, no DB hit
+
+
+def test_load_user_by_id_cache_expires_after_ttl(monkeypatch):
+    _auth._user_cache.clear()
+    fake_conn = _CountingUserRow(
+        {"id": "u1", "company_id": None, "username": "a", "full_name": "A", "role": "super_admin", "active": True, "company_active": None}
+    )
+    monkeypatch.setattr(_auth, "get_connection", fake_conn)
+
+    _auth._load_user_by_id("u1")
+    assert fake_conn.calls == 1
+
+    # Simulate TTL expiry without sleeping: back-date the cached expiry.
+    user, _expires_at = _auth._user_cache["u1"]
+    _auth._user_cache["u1"] = (user, 0.0)
+
+    _auth._load_user_by_id("u1")
+    assert fake_conn.calls == 2
+
+
+def test_invalidate_user_cache_forces_refetch(monkeypatch):
+    _auth._user_cache.clear()
+    fake_conn = _CountingUserRow(
+        {"id": "u1", "company_id": None, "username": "a", "full_name": "A", "role": "super_admin", "active": True, "company_active": None}
+    )
+    monkeypatch.setattr(_auth, "get_connection", fake_conn)
+
+    _auth._load_user_by_id("u1")
+    assert fake_conn.calls == 1
+
+    _auth.invalidate_user_cache()
+    _auth._load_user_by_id("u1")
+    assert fake_conn.calls == 2
+
+
+def test_disabled_user_after_cache_populated_stops_authenticating_once_invalidated(monkeypatch):
+    """The concrete risk the cache introduces: an admin disables a user
+    mid-session. Confirms invalidate_user_cache() (called from
+    _users_routes.update_user etc.) actually closes that window rather than
+    relying on the TTL alone."""
+    _auth._user_cache.clear()
+    fake_conn = _CountingUserRow(
+        {"id": "u1", "company_id": "c1", "username": "a", "full_name": "A", "role": "staff", "active": True, "company_active": True}
+    )
+    monkeypatch.setattr(_auth, "get_connection", fake_conn)
+
+    assert _auth._load_user_by_id("u1") is not None
+
+    # Admin disables the user - simulate the DB row flipping and the
+    # mutation route calling invalidate_user_cache(), as _users_routes.py
+    # now does on every disable/delete.
+    fake_conn.row = dict(fake_conn.row, active=False)
+    _auth.invalidate_user_cache()
+
+    assert _auth._load_user_by_id("u1") is None
