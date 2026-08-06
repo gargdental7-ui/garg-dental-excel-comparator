@@ -96,6 +96,7 @@ function NewQuotePage() {
   const [signatureId, setSignatureId] = useState<string>("");
 
   const [busy, setBusy] = useState(false);
+  const [busyPdf, setBusyPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const totals = useMemo(() => computeTotals(items, 0), [items]);
@@ -215,28 +216,33 @@ function NewQuotePage() {
     closeForm();
   }
 
-  async function handleGenerate() {
-    setError(null);
+  function validateBeforeGenerate(): boolean {
     if (!companyId) {
       setError("No company selected. Go back and pick a company first.");
-      return;
+      return false;
     }
     if (!customer.customer_name.trim()) {
       setError("Please enter a Customer Name before generating the quotation.");
-      return;
+      return false;
     }
     if (items.length === 0) {
       setError("Please add at least one product before generating the quotation.");
-      return;
+      return false;
     }
     if (duplicateProducts.length > 0) {
       setError(`The following product(s) were added more than once: ${duplicateProducts.join(", ")}.`);
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async function handleGenerate() {
+    setError(null);
+    if (!validateBeforeGenerate()) return;
     setBusy(true);
     try {
       const { blob, filename } = await api.quotation.generate({
-        company_id: companyId,
+        company_id: companyId!,
         customer,
         proposal,
         items: items.map((item) => stripClientId(item)),
@@ -253,13 +259,35 @@ function NewQuotePage() {
     }
   }
 
-  function handlePrint() {
-    window.print();
+  // Generates a PDF from the server: fill data -> insert signature -> insert
+  // images -> save DOCX -> convert that DOCX to PDF. This replaced a
+  // window.print() of the on-screen preview, which had no signature and
+  // could show broken-image boxes since it was an unrelated, hand-coded
+  // HTML approximation of the real template rather than a conversion of it.
+  async function handleGeneratePdf() {
+    setError(null);
+    if (!validateBeforeGenerate()) return;
+    setBusyPdf(true);
+    try {
+      const { blob, filename } = await api.quotation.generatePdf({
+        company_id: companyId!,
+        customer,
+        proposal,
+        items: items.map((item) => stripClientId(item)),
+        signature_id: signatureId || undefined,
+      });
+      downloadBlob(blob, filename);
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail.message : "An unexpected error occurred.");
+    } finally {
+      setBusyPdf(false);
+    }
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10 print:max-w-none print:px-0 print:py-0">
-      <div className="print:hidden">
+    <div className="mx-auto max-w-6xl px-6 py-10">
+      <div>
         <Link href="/quotation" prefetch={false} className="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
           &larr; Quotation Dashboard
         </Link>
@@ -269,8 +297,8 @@ function NewQuotePage() {
         </p>
       </div>
 
-      <div className="grid gap-6 print:block lg:grid-cols-[1fr_320px]">
-        <div className="space-y-4 print:hidden">
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-4">
           <QuotationHelp />
           <ErrorBanner message={error} />
 
@@ -364,29 +392,28 @@ function NewQuotePage() {
               )}
 
               <div className="flex flex-wrap gap-3">
-                <Button onClick={handleGenerate} disabled={busy || duplicateProducts.length > 0}>
+                <Button onClick={handleGenerate} disabled={busy || busyPdf || duplicateProducts.length > 0}>
                   {busy ? "Generating..." : "Generate DOCX"}
                 </Button>
-                <Button variant="secondary" onClick={handlePrint}>
-                  Print / Save as PDF
+                <Button variant="secondary" onClick={handleGeneratePdf} disabled={busy || busyPdf || duplicateProducts.length > 0}>
+                  {busyPdf ? "Generating..." : "Generate PDF"}
                 </Button>
               </div>
             </div>
           )}
         </div>
 
-        <div className="print:hidden">
+        <div>
           <QuoteSummary totals={totals} currency={proposal.currency || "NRs"} itemCount={items.length} />
         </div>
       </div>
 
-      {/* The one and only preview instance - visible on screen for review,
-          and also the print target for "Print / Save as PDF" (see the
-          #quotation-print-area isolation rule in globals.css). Living
-          outside the print:hidden column above avoids ever having two
-          copies (and two duplicate ids) in the DOM at once. */}
+      {/* Rough on-screen draft preview only - not what "Generate DOCX" /
+          "Generate PDF" produce. Those come from the server rendering the
+          company's actual uploaded template (with the real signature and
+          images), which this simplified HTML approximation can't reflect. */}
       {items.length > 0 && (
-        <div className="mt-6 max-h-[600px] overflow-y-auto print:mt-0 print:max-h-none print:overflow-visible">
+        <div className="mt-6 max-h-[600px] overflow-y-auto">
           <QuotationPreview customer={customer} proposal={proposal} items={items} totals={totals} />
         </div>
       )}

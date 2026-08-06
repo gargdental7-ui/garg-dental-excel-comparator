@@ -28,8 +28,7 @@ export function QuotationPreview({
 }) {
   return (
     <div
-      id="quotation-print-area"
-      className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white p-8 text-slate-900 print:border-0 print:p-0"
+      className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white p-8 text-slate-900"
       style={{ fontFamily: "Calibri, 'Segoe UI', Candara, Arial, sans-serif", lineHeight: 1.35 }}
     >
       <div className="text-center">

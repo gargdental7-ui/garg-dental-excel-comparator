@@ -226,6 +226,7 @@ def _persist_quotation(
     signature_id: Optional[str] = None,
     template_version: Optional[int] = None,
     master_excel_version: Optional[int] = None,
+    pdf_bytes: Optional[bytes] = None,
 ) -> None:
     """Best-effort save of the just-rendered quotation (DOCX always, PDF
     when conversion succeeds) to Storage + DB. Deliberately never raises -
@@ -234,13 +235,17 @@ def _persist_quotation(
     getting their DOCX to send to a customer right now, so any failure
     here is logged and swallowed rather than turned into a 500. A PDF
     conversion failure specifically still lets the DOCX save proceed
-    (status="pdf_pending"), since those are independent failure modes."""
+    (status="pdf_pending"), since those are independent failure modes.
+
+    pdf_bytes lets a caller that already converted the DOCX (generate_pdf(),
+    below) pass those bytes straight through instead of paying for a second
+    CloudConvert conversion of the same document."""
     try:
-        pdf_bytes = None
-        try:
-            pdf_bytes = convert_docx_to_pdf(docx_bytes, "quotation.docx")
-        except Exception:
-            logger.exception("PDF conversion failed; the quotation will still be saved as DOCX-only")
+        if pdf_bytes is None:
+            try:
+                pdf_bytes = convert_docx_to_pdf(docx_bytes, "quotation.docx")
+            except Exception:
+                logger.exception("PDF conversion failed; the quotation will still be saved as DOCX-only")
 
         now = datetime.now(timezone.utc)
         with get_connection(
@@ -301,9 +306,14 @@ def _persist_quotation(
         logger.exception("Failed to persist quotation; the DOCX response to the user is unaffected")
 
 
-@router.post("/generate")
-@handle_app_errors
-def generate(payload: GenerateQuotationRequest, request: Request, current_user: CurrentUser = Depends(require_auth)):
+def _render_quotation_for_payload(payload: GenerateQuotationRequest, current_user: CurrentUser):
+    """Shared setup for both /generate (DOCX) and /generate/pdf: resolves the
+    company, validates and totals the items, fetches template/logo/signature
+    assets, and renders the final DOCX - the one place that actually fills
+    data, inserts the signature, and inserts images. Both endpoints hand
+    this exact output to convert_docx_to_pdf() when a PDF is needed, so the
+    PDF a user gets is always a conversion of the same final DOCX, never a
+    separate rendering of the raw template."""
     scope = resolve_company_scope(current_user, payload.company_id)
     company = get_company(scope)
     customer = QuotationCustomer(**payload.customer.model_dump())
@@ -319,22 +329,62 @@ def generate(payload: GenerateQuotationRequest, request: Request, current_user: 
     logo_bytes = fetch_company_logo_bytes(current_user, scope)
     signature = fetch_signature_for_render(current_user, scope, payload.signature_id) if payload.signature_id else None
 
-    content = render_quotation_docx(company, customer, proposal, items, totals, template_bytes, logo_bytes, signature)
+    docx_bytes = render_quotation_docx(company, customer, proposal, items, totals, template_bytes, logo_bytes, signature)
+    return scope, company, customer, proposal, docx_bytes, signature is not None
+
+
+@router.post("/generate")
+@handle_app_errors
+def generate(payload: GenerateQuotationRequest, request: Request, current_user: CurrentUser = Depends(require_auth)):
+    scope, company, customer, proposal, docx_bytes, has_signature = _render_quotation_for_payload(payload, current_user)
     filename = default_output_filename(company, customer, proposal)
 
     _persist_quotation(
         current_user,
         scope,
         customer,
-        content,
+        docx_bytes,
         request,
-        signature_id=payload.signature_id if signature else None,
+        signature_id=payload.signature_id if has_signature else None,
         template_version=fetch_template_version(current_user, scope),
         master_excel_version=fetch_master_excel_version(current_user, scope),
     )
 
     return Response(
-        content=content,
+        content=docx_bytes,
         media_type=DOCX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/generate/pdf")
+@handle_app_errors
+def generate_pdf(payload: GenerateQuotationRequest, request: Request, current_user: CurrentUser = Depends(require_auth)):
+    """Returns a real PDF conversion of the final, fully-filled DOCX
+    (signature and product images included) - never a rendering of the raw
+    template. This is the only supported way to get a PDF straight out of
+    the quotation builder; the old client-side window.print() path produced
+    a PDF of an unrelated, hand-coded HTML preview that had no signature
+    and could show broken-image boxes, so it's been removed rather than
+    kept alongside this."""
+    scope, company, customer, proposal, docx_bytes, has_signature = _render_quotation_for_payload(payload, current_user)
+    pdf_bytes = convert_docx_to_pdf(docx_bytes, "quotation.docx")
+    filename = default_output_filename(company, customer, proposal).rsplit(".", 1)[0] + ".pdf"
+
+    _persist_quotation(
+        current_user,
+        scope,
+        customer,
+        docx_bytes,
+        request,
+        signature_id=payload.signature_id if has_signature else None,
+        template_version=fetch_template_version(current_user, scope),
+        master_excel_version=fetch_master_excel_version(current_user, scope),
+        pdf_bytes=pdf_bytes,
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type=PDF_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

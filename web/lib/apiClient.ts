@@ -226,6 +226,7 @@ export const api = {
       return postForm<QuotationProductsImportResponse>(`/api/quotation/products/import`, form);
     },
     generate: (payload: GenerateQuotationRequest) => postJsonForBlob(`/api/quotation/generate`, payload),
+    generatePdf: (payload: GenerateQuotationRequest) => postJsonForBlob(`/api/quotation/generate/pdf`, payload),
   },
   masterExcel: {
     getMetadata: (companyId?: string) => {

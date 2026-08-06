@@ -24,22 +24,3 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
-
-/* Isolates the Smart Quotation Generator's print preview so
-   window.print() (used for "Generate PDF" / "Print") only outputs the
-   quotation itself, not the surrounding app chrome/form controls. */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  #quotation-print-area,
-  #quotation-print-area * {
-    visibility: visible;
-  }
-  #quotation-print-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-  }
-}

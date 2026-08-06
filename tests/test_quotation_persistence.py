@@ -243,6 +243,93 @@ def test_generate_without_signature_id_never_calls_signature_lookup(client, monk
     assert insert_call[7] is None  # signature_id
 
 
+def test_generate_pdf_returns_pdf_converted_from_the_final_docx(client, monkeypatch, fake_db_state):
+    """The whole point of /generate/pdf: it must return a PDF conversion of
+    the same final DOCX (signature/images already inserted) - never a
+    separate conversion of the raw template - and that conversion must not
+    be run twice (once for the response, once for persistence)."""
+    _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
+    monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
+
+    conversions = []
+
+    def fake_convert(docx_bytes, filename):
+        conversions.append(docx_bytes)
+        return b"%PDF-fake"
+
+    monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", fake_convert)
+
+    res = client.post("/api/quotation/generate/pdf", json=VALID_PAYLOAD)
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "application/pdf"
+    assert res.content == b"%PDF-fake"
+    assert res.headers["content-disposition"].endswith('.pdf"')
+
+    # exactly one conversion - the response body and the persisted PDF are
+    # the same bytes, not two independent CloudConvert calls
+    assert len(conversions) == 1
+
+    insert_call = next(p for q, p in fake_db_state["executed"] if q.startswith("insert into quotations"))
+    assert insert_call[4] == "final"  # status column
+
+
+def test_generate_pdf_raises_when_conversion_fails(client, monkeypatch, fake_db_state):
+    """Unlike /generate (which silently degrades to DOCX-only on a
+    CloudConvert failure), /generate/pdf was explicitly asked for a PDF, so
+    a conversion failure must surface as a real error, not a silent
+    fallback the caller can't detect from a 200 response."""
+    _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
+
+    from _pdf_conversion import PdfConversionError
+
+    def raise_conversion_error(docx_bytes, filename):
+        raise PdfConversionError("the conversion job reported an error")
+
+    monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", raise_conversion_error)
+
+    res = client.post("/api/quotation/generate/pdf", json=VALID_PAYLOAD)
+    assert res.status_code == 400
+    assert not any(q.startswith("insert into quotations") for q, _ in fake_db_state["executed"])
+
+
+def test_generate_pdf_passes_resolved_signature_to_render(client, monkeypatch, fake_db_state):
+    _login_as(client, monkeypatch, STAFF)
+    monkeypatch.setattr(_quotation_routes, "get_company", lambda company_id: FAKE_COMPANY)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_template_bytes", lambda current_user, company_id=None: _TEMPLATE_BYTES)
+    monkeypatch.setattr(_quotation_routes, "fetch_company_logo_bytes", lambda current_user, company_id=None: None)
+    monkeypatch.setattr(_quotation_routes, "fetch_template_version", lambda current_user, company_id: 1)
+    monkeypatch.setattr(_quotation_routes, "fetch_master_excel_version", lambda current_user, company_id: None)
+    monkeypatch.setattr(_quotation_routes, "convert_docx_to_pdf", lambda docx_bytes, filename: b"%PDF-fake")
+    monkeypatch.setattr(_quotation_routes, "storage_upload", lambda bucket, path, content, media_type: None)
+
+    captured = {}
+
+    def fake_fetch_signature(current_user, company_id, signature_id):
+        captured["company_id"] = company_id
+        captured["signature_id"] = signature_id
+        return {"image_bytes": None, "name": "Dr. Signer", "designation": "Director"}
+
+    monkeypatch.setattr(_quotation_routes, "fetch_signature_for_render", fake_fetch_signature)
+
+    payload = dict(VALID_PAYLOAD, signature_id="sig-1")
+    res = client.post("/api/quotation/generate/pdf", json=payload)
+    assert res.status_code == 200
+    assert captured == {"company_id": "company-1", "signature_id": "sig-1"}
+
+    insert_call = next(p for q, p in fake_db_state["executed"] if q.startswith("insert into quotations"))
+    assert insert_call[7] == "sig-1"  # signature_id
+
+
 def test_history_query_scopes_to_own_quotations_for_staff(monkeypatch):
     state = {"executed": [], "counter": 0}
     monkeypatch.setattr(_quotation_history_routes, "get_connection", lambda **kwargs: _RecordingConnection(state))
